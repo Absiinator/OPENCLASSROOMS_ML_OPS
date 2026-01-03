@@ -1,0 +1,12 @@
+{
+  "optimal_threshold": 0.44,
+  "cost_fn": 10,
+  "cost_fp": 1,
+  "model_name": "home_credit_model",
+  "run_id": "169b2338d7224da2801ea8dda14d64e3",
+  "metrics": {
+    "auc": 0.7683205910900309,
+    "accuracy": 0.704948241287735,
+    "business_cost": 9413.0
+  }
+}
