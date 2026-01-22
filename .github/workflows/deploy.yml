@@ -158,6 +158,9 @@ jobs:
       name: production-api
       url: ${{ steps.deploy.outputs.url }}
     
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    
     steps:
       - name: 🚀 Déploiement API sur Render
         id: deploy
@@ -186,6 +189,9 @@ jobs:
     needs: [build-dashboard, deploy-api]
     environment:
       name: production-dashboard
+      url: ${{ steps.deploy.outputs.url }}
+    
+    outputs:
       url: ${{ steps.deploy.outputs.url }}
     
     steps:
