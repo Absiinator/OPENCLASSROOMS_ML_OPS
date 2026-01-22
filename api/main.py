@@ -198,11 +198,12 @@ async def root():
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
-async def health_check():
+async def health_check(model_dep = Depends(get_model)):
     """Vérification de l'état de l'API."""
+    used_model = model_dep or model
     return HealthResponse(
-        status="healthy" if model is not None else "degraded",
-        model_loaded=model is not None,
+        status="healthy" if used_model is not None else "degraded",
+        model_loaded=used_model is not None,
         version=API_VERSION
     )
 
