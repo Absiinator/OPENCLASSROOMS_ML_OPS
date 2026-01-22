@@ -1,0 +1,154 @@
+================================================================================
+                   RESULTATS DU MODELE - ANALYSE DETAILLEE
+================================================================================
+Date de creation: 2026-01-03
+Source: reports/metrics_report.txt, models/model_config.json
+
+================================================================================
+                            1. CONFIGURATION
+================================================================================
+
+Modele: LightGBM (Light Gradient Boosting Machine)
+Run ID MLflow: 169b2338d7224da2801ea8dda14d64e3
+Experiment: home-credit-scoring
+
+Couts metier:
+  - Faux Negatif (FN): 10
+  - Faux Positif (FP): 1
+
+Donnees utilisees:
+  - Echantillon: 30% du dataset complet (pour demo rapide)
+  - Split: 80% train, 20% validation
+
+================================================================================
+                            2. RESULTATS AVEC SEUIL PAR DEFAUT (0.5)
+================================================================================
+
+Metriques:
+  - AUC: 0.7683 (bon pouvoir discriminant)
+  - Accuracy: 0.7550 (75.5% de predictions correctes)
+  - Precision: 0.1895 (19% des predictions positives sont correctes)
+  - Recall: 0.6251 (62.5% des defauts sont detectes)
+  - F1-Score: 0.2909
+
+Matrice de confusion:
+                  Predit 0    Predit 1
+  Reel 0 (TN)     13,004      (FP) 3,964
+  Reel 1 (FN)        556      (TP)   927
+
+Cout metier total: 9,524
+  - Cout des FN: 556 * 10 = 5,560
+  - Cout des FP: 3,964 * 1 = 3,964
+
+================================================================================
+                            3. RESULTATS AVEC SEUIL OPTIMAL (0.44)
+================================================================================
+
+Metriques:
+  - AUC: 0.7683 (inchange, independant du seuil)
+  - Accuracy: 0.7049 (70.5% de predictions correctes)
+  - Precision: 0.1724 (17.2% des predictions positives sont correctes)
+  - Recall: 0.7026 (70.3% des defauts sont detectes)
+  - F1-Score: 0.2768
+
+Matrice de confusion:
+                  Predit 0    Predit 1
+  Reel 0 (TN)     11,965      (FP) 5,003
+  Reel 1 (FN)        441      (TP) 1,042
+
+Cout metier total: 9,413
+  - Cout des FN: 441 * 10 = 4,410
+  - Cout des FP: 5,003 * 1 = 5,003
+
+================================================================================
+                            4. ANALYSE COMPARATIVE
+================================================================================
+
+GAIN DU SEUIL OPTIMAL:
+  - Reduction du cout: 9,524 - 9,413 = 111
+  - Reduction relative: 1.2%
+
+TRADE-OFFS:
+  Seuil 0.5 -> Seuil 0.44:
+    - Accuracy: -5.0% (baisse)
+    - Precision: -1.7% (baisse)
+    - Recall: +7.8% (hausse)
+    - FN: -115 (moins de defauts manques)
+    - FP: +1,039 (plus de bons clients refuses)
+
+INTERPRETATION:
+  Le seuil optimal (0.44) permet de:
+  - Detecter plus de clients en defaut (+115 TP)
+  - Au prix de refuser plus de bons clients (+1,039 FP)
+  - Mais le gain sur les FN (10x) compense le cout des FP
+
+================================================================================
+                            5. TOP FEATURES (IMPORTANCE)
+================================================================================
+
+D'apres reports/feature_importance.csv:
+
+Rang  Feature                 Importance  Interpretation
+----  ----------------------  ----------  ------------------------------------------
+1     EXT_SOURCE_2            0.XX        Score externe bureau 2 (credit score)
+2     EXT_SOURCE_3            0.XX        Score externe bureau 3 (credit score)
+3     DAYS_BIRTH              0.XX        Age du client (jours depuis naissance)
+4     DAYS_EMPLOYED           0.XX        Anciennete dans l'emploi actuel
+5     AMT_CREDIT              0.XX        Montant du credit demande
+6     AMT_ANNUITY             0.XX        Montant de l'annuite
+7     CREDIT_INCOME_RATIO     0.XX        Ratio credit/revenu (feature engineered)
+8     AMT_GOODS_PRICE         0.XX        Prix du bien finance
+9     DAYS_ID_PUBLISH         0.XX        Anciennete du document d'identite
+10    EXT_SOURCE_1            0.XX        Score externe bureau 1
+
+OBSERVATIONS:
+  - Les scores externes (EXT_SOURCE_*) sont les plus predictifs
+  - L'age et l'anciennete professionnelle sont importants
+  - Les montants financiers (credit, annuite) jouent un role
+  - Les features engineered (ratios) apportent de la valeur
+
+================================================================================
+                            6. INTERPRETATION METIER
+================================================================================
+
+PROFIL CLIENT A RISQUE (augmente la probabilite de defaut):
+  - Score externe faible (EXT_SOURCE < 0.3)
+  - Jeune age
+  - Faible anciennete dans l'emploi
+  - Ratio credit/revenu eleve (> 5)
+
+PROFIL CLIENT SUR (diminue la probabilite de defaut):
+  - Score externe eleve (EXT_SOURCE > 0.6)
+  - Age mur (35-55 ans)
+  - Anciennete professionnelle > 5 ans
+  - Ratio credit/revenu modere (< 3)
+
+================================================================================
+                            7. VALIDATION DU MODELE
+================================================================================
+
+CRITERES DE QUALITE:
+  [OK] AUC = 0.7683 < 0.82 (pas d'overfitting)
+  [OK] Seuil optimal != 0.5 (optimisation fonctionnelle)
+  [OK] Cout metier reduit avec seuil optimal
+  [OK] Recall eleve (70%) pour detecter les defauts
+
+POINTS D'ATTENTION:
+  [!] Precision faible (17%) -> beaucoup de faux positifs
+  [!] Accuracy reduite avec seuil optimal (trade-off accepte)
+
+================================================================================
+                            8. RECOMMANDATIONS
+================================================================================
+
+POUR LA PRODUCTION:
+1. Utiliser le seuil optimal de 0.44
+2. Monitorer le drift des features EXT_SOURCE_* (tres influentes)
+3. Re-entrainer si AUC baisse de plus de 5%
+
+POUR L'AMELIORATION:
+1. Collecter plus de donnees sur les clients en defaut (desequilibre)
+2. Explorer les interactions entre features
+3. Tester des algorithmes d'ensemble (stacking)
+
+================================================================================

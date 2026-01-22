@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: home-credit-scoring-api
+    env: docker
+    dockerfilePath: ./api/Dockerfile
+    dockerContext: .
+    plan: free
+    region: frankfurt
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: PYTHONPATH
+        value: /app
+      - key: MODEL_PATH
+        value: /app/models/lgbm_model.joblib
+      - key: PREPROCESSOR_PATH
+        value: /app/models/preprocessor.joblib

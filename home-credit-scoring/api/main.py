@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse
 import pandas as pd
 import numpy as np
 
@@ -45,6 +46,8 @@ from api.models import (
 # Configuration
 API_VERSION = "1.0.0"
 MODEL_DIR = Path(__file__).parent.parent / "models"
+DATA_DIR = Path(__file__).parent.parent / "data"
+REPORTS_DIR = Path(__file__).parent.parent / "reports"
 
 # Variables globales pour le modèle
 model = None
@@ -407,6 +410,73 @@ async def get_client_prediction(
         status_code=501, 
         detail="Endpoint non implémenté. Utilisez /predict avec les données du client."
     )
+
+
+# ---------------------------------------------------------------------------
+# Data endpoints: descriptive stats & drift reports
+# ---------------------------------------------------------------------------
+
+
+@app.get("/data/describe", tags=["Data"])
+async def data_describe(source: Optional[str] = None):
+    """Retourne des statistiques descriptives pour le jeu de données.
+
+    - `source`: optionnel, chemin local relatif ou URL à télécharger
+    """
+    # Déterminer la source des données
+    data_path = None
+    # Priorité: query param `source` -> env DATA_URL -> local data/application_train.csv
+    env_url = os.environ.get("DATA_URL")
+    try:
+        if source:
+            # si c'est une URL, tenter de télécharger
+            if source.startswith("http"):
+                df = pd.read_csv(source)
+            else:
+                data_path = Path(source)
+        elif env_url:
+            if env_url.startswith("http"):
+                df = pd.read_csv(env_url)
+            else:
+                data_path = Path(env_url)
+        else:
+            candidate = DATA_DIR / "application_train.csv"
+            if candidate.exists():
+                data_path = candidate
+
+        if data_path is not None:
+            df = pd.read_csv(data_path)
+
+        # Calculer stats
+        desc = df.describe(include='all').to_dict()
+        missing = df.isna().sum().to_dict()
+        target_counts = df['TARGET'].value_counts().to_dict() if 'TARGET' in df.columns else {}
+
+        return {
+            "n_rows": len(df),
+            "n_columns": df.shape[1],
+            "describe": desc,
+            "missing": missing,
+            "target_distribution": target_counts
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la lecture des données: {e}")
+
+
+
+@app.get("/data/drift", response_class=HTMLResponse, tags=["Data"])
+async def data_drift_report():
+    """Sert le rapport Evidently (HTML) si présent dans `reports/`.
+
+    Si le fichier HTML n'existe pas, retourne 404.
+    """
+    # Chercher des fichiers report HTML connus
+    candidates = [REPORTS_DIR / "evidently_full_report.html", REPORTS_DIR / "data_drift_report.html"]
+    for c in candidates:
+        if c.exists():
+            return HTMLResponse(content=c.read_text(encoding='utf-8'), status_code=200)
+
+    raise HTTPException(status_code=404, detail="Rapport de drift introuvable dans reports/")
 
 
 # Gestion des erreurs

@@ -101,27 +101,41 @@ python scripts/download_data.py
 # Avec MLflow tracking
 python -c "from src.train import train_with_mlflow; train_with_mlflow()"
 
-# Voir les expériences MLflow
-mlflow ui --port 5000
+# Voir les expériences MLflow (port 5002 car 5000/5001 utilisés par AirPlay sur macOS)
+python run.py mlflow
+# Ouvre http://localhost:5002
 ```
 
-### Lancer l'API
+### Lancer la stack complète (recommandé)
 
 ```bash
-# En local
-cd api
-uvicorn main:app --reload --port 8000
+# Méthode 1: Script unifié (API + Dashboard)
+python run.py all
 
-# Avec Docker
-docker build -t home-credit-scoring ./api
-docker run -p 8000:8000 home-credit-scoring
+# Méthode 2: Services séparés
+python run.py api        # API sur http://localhost:8000
+python run.py dashboard  # Dashboard sur http://localhost:8501
+python run.py mlflow     # MLflow UI sur http://localhost:5002
 ```
 
-### Lancer l'interface Streamlit
+### Ports par défaut
+
+| Service | Port | URL |
+|---------|------|-----|
+| API FastAPI | 8000 | http://localhost:8000 |
+| Dashboard Streamlit | 8501 | http://localhost:8501 |
+| MLflow UI | 5002 | http://localhost:5002 |
+
+### Lancer avec Docker
 
 ```bash
-cd streamlit_app
-streamlit run app.py
+# Build et run API
+docker build -t home-credit-api -f api/Dockerfile .
+docker run -p 8000:8000 home-credit-api
+
+# Build et run Dashboard
+docker build -t home-credit-dashboard -f streamlit_app/Dockerfile .
+docker run -p 8501:8501 -e API_URL=http://host.docker.internal:8000 home-credit-dashboard
 ```
 
 ## 📊 Résultats du modèle
@@ -210,34 +224,77 @@ pytest tests/test_preprocessing.py -v  # Tests prétraitement
 pytest tests/test_api.py -v         # Tests API
 ```
 
-## 🐳 Déploiement
+## 🔁 CI/CD et Déploiement
 
-### Docker
+### Architecture CI/CD
 
-```bash
-# Build
-docker build -t home-credit-scoring ./api
+Le projet utilise **2 workflows GitHub Actions séparés** pour la maintenabilité :
 
-# Run
-docker run -p 8000:8000 -e MODEL_PATH=/app/models/model.joblib home-credit-scoring
+1. **CI (`ci.yml`)** - Intégration Continue
+   - Linting (black, isort, flake8)
+   - Tests unitaires (pytest)
+   - Tests API
+   - Build Docker (API + Dashboard)
+   - Analyse de sécurité (bandit, safety)
+
+2. **CD (`deploy.yml`)** - Déploiement Continu
+   - **S'exécute uniquement si la CI réussit**
+   - Build et push des images vers GitHub Container Registry
+   - Déploiement automatique sur Render (API et Dashboard)
+   - Tests de fumée post-déploiement
+
+### Flux de déploiement
+
+```
+Push sur main → CI (tests) → ✅ Succès → CD (deploy) → Render
+                           → ❌ Échec → Pas de déploiement
 ```
 
-### Render
+### Configuration Render (gratuit)
 
-1. Connecter le repository GitHub à Render
-2. Créer un nouveau Web Service
-3. Configurer :
-   - Environment: Docker
-   - Root Directory: `api`
-   - Health Check Path: `/health`
+#### 1. Déployer l'API
+
+| Paramètre | Valeur |
+|-----------|--------|
+| Type | Web Service |
+| Environment | Docker |
+| Dockerfile Path | `api/Dockerfile` |
+| Health Check Path | `/health` |
+| Port | 8000 |
+
+#### 2. Déployer le Dashboard
+
+| Paramètre | Valeur |
+|-----------|--------|
+| Type | Web Service |
+| Environment | Docker |
+| Dockerfile Path | `streamlit_app/Dockerfile` |
+| Health Check Path | `/_stcore/health` |
+| Port | 8501 |
+
+**Variable d'environnement requise pour le Dashboard:**
+```
+API_URL=https://votre-api.onrender.com
+```
+
+### Secrets GitHub requis
+
+Pour activer le déploiement automatique, configurez ces secrets dans GitHub :
+
+| Secret | Description |
+|--------|-------------|
+| `RENDER_API_KEY` | Clé API Render (Account Settings → API Keys) |
+| `RENDER_API_SERVICE_ID` | ID du service API (visible dans l'URL Render) |
+| `RENDER_DASHBOARD_SERVICE_ID` | ID du service Dashboard |
 
 ### Variables d'environnement
 
-| Variable | Description | Défaut |
-|----------|-------------|--------|
-| `MODEL_PATH` | Chemin du modèle | `models/model.joblib` |
-| `MLFLOW_TRACKING_URI` | URI MLflow | `mlruns` |
-| `THRESHOLD` | Seuil de décision | `0.35` |
+| Variable | Service | Description | Défaut |
+|----------|---------|-------------|--------|
+| `PORT` | API/Dashboard | Port d'écoute | 8000 / 8501 |
+| `API_URL` | Dashboard | URL de l'API | `http://localhost:8000` |
+| `MODEL_PATH` | API | Chemin du modèle | `./models/lgbm_model.joblib` |
+| `THRESHOLD` | API | Seuil de décision | `0.44` |
 
 ## 📖 Documentation API
 

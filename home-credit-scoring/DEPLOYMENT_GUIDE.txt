@@ -1,0 +1,412 @@
+================================================================================
+       GUIDE DE DEPLOIEMENT GRATUIT - HOME CREDIT SCORING
+================================================================================
+Date: 2026-01-03
+Auteur: Documentation technique du projet
+
+================================================================================
+                        TABLE DES MATIERES
+================================================================================
+1. Vue d'ensemble des options
+2. Deploiement API sur Render (RECOMMANDE)
+3. Deploiement Dashboard sur Streamlit Cloud
+4. Configuration des variables d'environnement
+5. Alternative: Railway
+6. Checklist avant deploiement
+
+================================================================================
+                    1. VUE D'ENSEMBLE DES OPTIONS
+================================================================================
+
+COMPOSANT          PLATEFORME RECOMMANDEE    TIER GRATUIT    LIMITES
+---------------------------------------------------------------------------
+API FastAPI        Render                    OUI             750h/mois, cold start
+Dashboard          Streamlit Cloud           OUI             1 app privee
+MLflow UI          Local uniquement          N/A             Pas de service gratuit
+
+POURQUOI CES CHOIX:
+  - Render: Deploy depuis GitHub, Docker support, SSL auto, logs
+  - Streamlit Cloud: Integration native, deploy en 1 clic, partage facile
+
+================================================================================
+                    2. DEPLOIEMENT API SUR RENDER
+================================================================================
+
+PREREQUIS:
+  - Compte GitHub avec le repository pousse
+  - Compte Render (gratuit sur render.com)
+
+ETAPE 1: Preparer le repository
+------------------------------
+1. S'assurer que ces fichiers sont presents:
+   - api/Dockerfile
+   - api/requirements.txt
+   - models/model_config.json (le modele sera telecharge au runtime)
+
+2. Creer un fichier render.yaml a la racine:
+
+```yaml
+services:
+  - type: web
+    name: home-credit-scoring-api
+    env: docker
+    dockerfilePath: ./api/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: PYTHONPATH
+        value: /app
+```
+
+ETAPE 2: Deployer sur Render
+----------------------------
+1. Aller sur https://dashboard.render.com/
+2. Cliquer "New +" > "Web Service"
+3. Connecter votre compte GitHub
+4. Selectionner le repository "home-credit-scoring"
+5. Configurer:
+   - Name: home-credit-scoring-api
+   - Environment: Docker
+   - Docker Context: .
+   - Dockerfile Path: ./api/Dockerfile
+   - Plan: Free
+
+6. Ajouter les variables d'environnement:
+   - PORT = 8000
+   - MODEL_PATH = /app/models/lgbm_model.joblib
+   - PREPROCESSOR_PATH = /app/models/preprocessor.joblib
+
+7. Cliquer "Create Web Service"
+
+ETAPE 3: Verification
+---------------------
+Une fois deploye, l'URL sera:
+  https://home-credit-scoring-api.onrender.com
+
+Tester:
+  curl https://home-credit-scoring-api.onrender.com/health
+  curl https://home-credit-scoring-api.onrender.com/docs
+
+NOTE IMPORTANTE: Le tier gratuit de Render met l'API en veille apres
+15 minutes d'inactivite. Le premier appel peut prendre 30-60 secondes.
+
+================================================================================
+                    3. DEPLOIEMENT DASHBOARD SUR STREAMLIT CLOUD
+================================================================================
+
+PREREQUIS:
+  - Repository GitHub public ou prive
+  - Compte Streamlit Cloud (gratuit sur share.streamlit.io)
+
+ETAPE 1: Preparer les fichiers
+-----------------------------
+1. S'assurer que streamlit_app/requirements.txt existe
+2. Creer un fichier .streamlit/config.toml (optionnel):
+
+```toml
+[theme]
+primaryColor = "#2ecc71"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
+font = "sans serif"
+
+[server]
+headless = true
+enableCORS = false
+port = 8501
+```
+
+ETAPE 2: Deployer sur Streamlit Cloud
+------------------------------------
+1. Aller sur https://share.streamlit.io/
+2. Se connecter avec GitHub
+3. Cliquer "New app"
+4. Remplir:
+   - Repository: votre-username/home-credit-scoring
+   - Branch: main
+   - Main file path: streamlit_app/app.py
+
+5. Configurer les secrets (Settings > Secrets):
+
+```toml
+[api]
+url = "https://home-credit-scoring-api.onrender.com"
+```
+
+6. Cliquer "Deploy"
+
+ETAPE 3: Configurer le dashboard pour utiliser les secrets
+---------------------------------------------------------
+Modifier streamlit_app/app.py pour lire l'URL depuis les secrets:
+
+```python
+import streamlit as st
+
+# Configuration de l'URL API
+if "api" in st.secrets:
+    API_URL = st.secrets["api"]["url"]
+else:
+    API_URL = os.getenv("API_URL", "http://localhost:8000")
+```
+
+================================================================================
+                    4. VARIABLES D'ENVIRONNEMENT
+================================================================================
+
+POUR L'API (Render):
+-------------------
+Variable              Valeur                              Requis
+------------------------------------------------------------------------
+PORT                  8000                                OUI
+MODEL_PATH            /app/models/lgbm_model.joblib       NON (defaut)
+PREPROCESSOR_PATH     /app/models/preprocessor.joblib     NON (defaut)
+THRESHOLD             0.44                                NON (defaut: config)
+PYTHONPATH            /app                                OUI
+HOST                  0.0.0.0                             NON (defaut)
+
+POUR LE DASHBOARD (Streamlit Cloud):
+-----------------------------------
+Via st.secrets (fichier TOML):
+[api]
+url = "https://votre-api.onrender.com"
+
+POUR LE DEVELOPPEMENT LOCAL:
+----------------------------
+Creer un fichier .env a la racine:
+
+```
+# API
+PORT=8000
+HOST=0.0.0.0
+MODEL_PATH=./models/lgbm_model.joblib
+PREPROCESSOR_PATH=./models/preprocessor.joblib
+
+# Dashboard
+API_URL=http://localhost:8000
+
+# MLflow
+MLFLOW_TRACKING_URI=./mlruns
+```
+
+================================================================================
+                    5. ALTERNATIVE: RAILWAY
+================================================================================
+
+Railway (railway.app) est une alternative a Render avec:
+  - 500h gratuites/mois
+  - Deploy depuis GitHub
+  - Interface plus moderne
+
+ETAPES:
+1. Creer un compte sur railway.app
+2. "New Project" > "Deploy from GitHub"
+3. Selectionner le repository
+4. Configurer le Dockerfile:
+   - Root Directory: api
+   - Dockerfile Path: Dockerfile
+
+5. Ajouter les variables d'environnement
+6. Deploy
+
+================================================================================
+                    6. CHECKLIST AVANT DEPLOIEMENT
+================================================================================
+
+API:
+[ ] Dockerfile present et fonctionnel
+[ ] requirements.txt a jour
+[ ] models/model_config.json present
+[ ] Endpoint /health fonctionne
+[ ] Tests passes localement
+[ ] .gitignore exclut les donnees sensibles
+
+DASHBOARD:
+[ ] requirements.txt dans streamlit_app/
+[ ] API_URL configurable via secrets/env
+[ ] Graphiques accessibles (WCAG)
+[ ] Test local avec API fonctionnelle
+
+GITHUB:
+[ ] Repository public ou prive avec acces configure
+[ ] Secrets GitHub configures (si necessaire)
+[ ] GitHub Actions (ci.yml, deploy.yml) corrects
+
+GENERAL:
+[ ] README.md a jour avec instructions
+[ ] Variables d'environnement documentees
+[ ] Liens vers API et Dashboard dans README
+
+================================================================================
+                    7. URLS DE PRODUCTION (A COMPLETER)
+================================================================================
+
+Une fois deployes, notez vos URLs:
+
+API Render:
+  URL: https://________________________.onrender.com
+  Documentation: https://________________________.onrender.com/docs
+  Health Check: https://________________________.onrender.com/health
+
+Dashboard Streamlit:
+  URL: https://________________________.streamlit.app
+
+MLflow UI (local):
+  URL: http://localhost:5000
+
+================================================================================
+                    8. TROUBLESHOOTING
+================================================================================
+
+PROBLEME: API ne demarre pas sur Render
+  - Verifier les logs dans le dashboard Render
+  - S'assurer que le Dockerfile build correctement
+  - Verifier que les fichiers models/ sont inclus
+
+PROBLEME: Dashboard ne trouve pas l'API
+  - Verifier que API_URL est correctement configure
+  - Tester l'API directement avec curl
+  - Verifier les CORS dans l'API
+
+PROBLEME: Cold start trop long (Render gratuit)
+  - C'est normal (30-60 sec apres inactivite)
+  - Option: utiliser un service de ping (UptimeRobot)
+  - Option: passer au tier payant
+
+PROBLEME: Modele trop gros pour GitHub
+  - Utiliser Git LFS
+  - Stocker le modele sur un stockage externe (S3, GCS)
+  - Reconstruire le modele au deploy
+================================================================================
+
+                    9. PITFALLS SPECIFIQUES POUR RENDER
+================================================================================
+
+1) STOCKAGE DES MODELES
+   - Render déploie à partir du code du repo ou d'un Docker context; il est déconseillé
+     de committer des fichiers modèles volumineux dans le repo public.
+   - Solutions: héberger les artefacts (joblib) sur S3/GCS et télécharger au démarrage
+     via une variable `MODEL_URL` ou utiliser Git LFS.
+
+2) HEALTH CHECK ET COLD START
+   - Configurez `healthCheckPath: /health` dans `render.yaml` pour que Render vérifie l'app.
+   - Le plan gratuit met en veille après inactivité; prévoyez un `wait` actif dans vos scripts
+     de démarrage (voir `run.py all --ci`) pour attendre que `/health` soit READY.
+
+3) VARIABLES D'ENVIRONNEMENT SENSIBLES
+   - Stockez `RENDER_API_KEY`, `MODEL_URL`, `DATA_URL`, `S3_CREDENTIALS` dans GitHub Secrets
+     et dans les Secrets Render (Dashboard > Environment > Secrets).
+
+4) CORS / ORIGINS
+   - L'API autorise par défaut `allow_origins=['*']`. En production, restreindre aux origines
+     du dashboard (ex: https://votre-app.streamlit.app) pour sécurité.
+
+5) LOGS ET TIMEOUTS
+   - Utilisez les Logs Render pour debug. Augmentez les timeouts si téléchargement modèle long.
+
+================================================================================
+                    10. VARIABLES D'ENVIRONNEMENT RECOMMANDEES
+================================================================================
+
+Liste minimale (Render & CI):
+
+ - PORT: 8000
+ - HOST: 0.0.0.0
+ - MODEL_PATH: /app/models/lgbm_model.joblib    # chemin local après download
+ - PREPROCESSOR_PATH: /app/models/preprocessor.joblib
+ - MODEL_URL: https://<bucket>/lgbm_model.joblib  # si modèle stocké externement
+ - PREPROCESSOR_URL: https://<bucket>/preprocessor.joblib
+ - DATA_URL: https://<bucket>/application_train.csv  # pour le dashboard et tests
+ - THRESHOLD: 0.44
+ - MLFLOW_TRACKING_URI: ./mlruns
+ - RENDER_API_KEY: <render_api_key>  # pour déclencher les deploys depuis CI
+ - RENDER_SERVICE_ID: <render_service_id>
+
+Ces variables doivent être configurées dansGitHub Secrets pour la CI et dans Render.
+
+================================================================================
+                    11. CI/CD: GitHub Actions (ordre et blocage)
+================================================================================
+
+But: Bloquer le déploiement si les tests critiques échouent.
+
+Ordre des vérifications (job CI):
+  1. Tests unitaires classiques (`pytest tests/`) — linting, formatting
+  2. Test de disponibilité des données: `GET /data/describe` — échoue si DATA_URL inaccessible
+  3. Test health: `GET /health` — échoue si le modèle n'est pas chargé (model_loaded=False)
+
+Implémentation recommandée:
+  - Le workflow `ci.yml` exécute les tests. Si toutes les étapes passent, le job `build_and_deploy`
+    est lancé.
+  - Dans `build_and_deploy`, utiliser `docker/build-push-action` pour construire l'image `api`.
+  - Option: après push du container, appeler l'API Render pour déclencher un déploiement
+    via `RENDER_API_KEY` et `RENDER_SERVICE_ID` (secrets GitHub).
+
+Exemple d'étapes (résumé):
+  - `pytest tests/test_deployment_checks.py` (le fichier `test_deployment_checks.py` contient :
+      * `test_health_endpoint` -> vérifie `/health`
+      * `test_data_describe` -> vérifie `/data/describe` ou DATA_URL)
+  - Si ces tests échouent, arrêter le pipeline et ne pas déployer.
+
+Note: Dans un scénario de CI, il est préférable d'utiliser des artefacts (models) disponibles
+via `MODEL_URL` afin que le test `/health` retourne `model_loaded=True`.
+
+================================================================================
+                    12. DOCKERISATION DU DASHBOARD
+================================================================================
+
+Options:
+ - Streamlit Cloud (recommandé pour dashboard public léger) : simple, pas besoin de Docker.
+ - Dockeriser Streamlit et déployer sur Render: permet plus de contrôle et d'intégration CI.
+
+Avantages Docker Streamlit:
+ - Même runtime que l'API (contrôle des versions)
+ - Possibilité d'ajouter un reverse proxy, TLS centralisé
+
+Inconvénients:
+ - Image plus lourde
+ - Gestion du scaling plus coûteuse
+
+Conclusion:
+ - Pour un déploiement gratuit rapide: utilisez Streamlit Cloud pour le dashboard et Render
+   pour l'API.
+ - Si vous souhaitez tout héberger sur Render: dockeriser le dashboard (ajouter Dockerfile
+   dans `streamlit_app/`) et créer un service séparé.
+
+================================================================================
+                    13. CHARGEMENT DES DONNEES SANS LES COMMITTER
+================================================================================
+
+Stratégies recommandées:
+ - Stocker les données sur un bucket (S3/GCS) et fournir `DATA_URL` comme variable d'env.
+ - Le backend doit implémenter `/data/describe` et `/data/drift` qui acceptent `source` en
+   query param pour surcharger la source (ex: `?source=https://...`).
+ - Les tests CI utilisent `DATA_URL` (secret) pour télécharger et valider les données.
+
+Test unitaire proposé:
+ - `tests/test_deployment_checks.py::test_data_describe` : tente `GET /data/describe` et échoue
+   si la lecture est impossible.
+
+================================================================================
+                    14. RÉSUMÉ DES FICHIERS AJOUTÉS / MODIFIÉS
+================================================================================
+
+Modifications importantes:
+ - `streamlit_app/app.py`: UI améliorée, dashboard Data Drift et stats intégrés, age -> number_input,
+    fallback local model pour résilience.
+ - `api/main.py`: nouveaux endpoints `/data/describe` et `/data/drift`.
+ - `tests/test_deployment_checks.py`: tests critiques pour CI (données + health).
+ - `launch_all.sh`: helper pour lancer `run.py all` dans l'env conda.
+ - `.github/workflows/ci.yml`: workflow CI (lint, tests, build Docker, optional deploy).
+
+================================================================================
+                    15. PROCHAINES ETAPES SUGGEREES
+================================================================================
+
+ - Mettre en place un stockage centralisé pour les modèles (`MODEL_URL`) et données (`DATA_URL`).
+ - Configurer les Secrets GitHub: `RENDER_API_KEY`, `RENDER_SERVICE_ID`, `MODEL_URL`, `DATA_URL`.
+ - Tester localement: `./launch_all.sh` puis ouvrir le dashboard.
+ - Activer le déploiement automatique sur la branche `main` via GitHub Actions.

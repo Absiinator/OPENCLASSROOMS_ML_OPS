@@ -1,4 +1,10 @@
-# Fichiers générés
+# ============================================
+# .gitignore - Home Credit Scoring Project
+# ============================================
+
+# ============================================
+# Python
+# ============================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -19,75 +25,151 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
+# ============================================
 # Environnements virtuels
+# ============================================
 .env
 .venv
 env/
 venv/
 ENV/
+env.bak/
+venv.bak/
 
-# IDE
+# ============================================
+# IDE et editeurs
+# ============================================
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
+.spyderproject
+.spyproject
+.ropeproject
 
+# ============================================
 # Jupyter Notebooks
+# ============================================
 .ipynb_checkpoints/
 *.ipynb_checkpoints
+profile_default/
+ipython_config.py
 
-# Données (trop volumineuses pour Git)
-data/raw/*.csv
-data/processed/*.csv
-data/processed/*.parquet
-*.csv
+# ============================================
+# Donnees (VOLUMINEUSES - ne pas versionner)
+# ============================================
+data/*.csv
+data/*.parquet
+data/*.feather
+data/raw/
+data/processed/
+
+# Exceptions: garder les fichiers requirements
 !api/requirements.txt
 !streamlit_app/requirements.txt
 
-# Modèles (trop volumineux pour Git)
+# ============================================
+# Modeles (VOLUMINEUX - ne pas versionner)
+# ============================================
 models/*.joblib
 models/*.pkl
+models/*.pickle
 models/*.h5
 models/*.onnx
+models/*.pt
+models/*.pth
 
-# MLflow
+# Exception: garder la config
+!models/model_config.json
+
+# ============================================
+# MLflow (tracking local)
+# ============================================
 mlruns/
 mlartifacts/
+notebooks/mlruns/
 
-# Rapports Evidently générés
-reports/drift/*.html
+# ============================================
+# Rapports generes
+# ============================================
+# On garde les rapports HTML pour Evidently (exigence projet)
+# reports/*.html
 reports/figures/*.png
 reports/figures/*.jpg
 
+# ============================================
 # Logs
+# ============================================
 *.log
 logs/
+nohup.out
 
-# Tests
+# ============================================
+# Tests et couverture
+# ============================================
 .coverage
+.coverage.*
 htmlcov/
 .pytest_cache/
 .tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
 
-# Documentation build
+# ============================================
+# Documentation
+# ============================================
 docs/_build/
+site/
 
-# OS
+# ============================================
+# OS specifiques
+# ============================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
-# Secrets
+# ============================================
+# Secrets et credentials
+# ============================================
 .env.local
 .env.*.local
+.env.production
+.env.staging
 *.pem
+*.key
 credentials.json
 kaggle.json
+secrets/
+.secrets/
 
+# ============================================
 # Docker
+# ============================================
 *.tar
+docker-compose.override.yml
 
-# Temporary
+# ============================================
+# Temporaire
+# ============================================
 tmp/
 temp/
+*.tmp
+*.bak
+*.backup
+
+# ============================================
+# Memory bank (genere automatiquement)
+# ============================================
+# On garde memory-bank pour la documentation
+# memory-bank/

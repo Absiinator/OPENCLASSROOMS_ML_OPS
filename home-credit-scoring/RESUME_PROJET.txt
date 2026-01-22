@@ -1,0 +1,274 @@
+================================================================================
+        RESUME DU PROJET HOME CREDIT SCORING - SYNTHESE COMPLETE
+================================================================================
+Date de generation: 2026-01-03
+Auteur: Documentation automatique du projet
+
+================================================================================
+                    1. VUE D'ENSEMBLE DU PROJET
+================================================================================
+
+CONTEXTE:
+  - Entreprise: Pret a depenser (societe financiere)
+  - Objectif: Construire un outil de scoring credit automatise
+  - Dataset: Home Credit Default Risk (Kaggle)
+  - Challenge: Predire la probabilite de defaut de paiement
+
+PROBLEMATIQUE METIER:
+  - Desequilibre des classes: 92% non-defaut vs 8% defaut
+  - Cout asymetrique: FN (defaut non detecte) = 10, FP (bon client refuse) = 1
+  - Besoin de transparence pour les charges de relation client
+
+================================================================================
+                    2. ARCHITECTURE TECHNIQUE
+================================================================================
+
+STRUCTURE DU PROJET:
+  home-credit-scoring/
+  ├── api/                 -> API FastAPI (deploiement cloud)
+  ├── data/                -> Donnees CSV (non versionnees)
+  ├── models/              -> Modeles entraines (.joblib)
+  ├── notebooks/           -> 4 notebooks d'analyse
+  ├── reports/             -> Rapports generes (HTML, CSV, PNG)
+  ├── src/                 -> Code source Python
+  ├── streamlit_app/       -> Dashboard interactif
+  ├── tests/               -> Tests unitaires Pytest
+  ├── memory-bank/         -> Documentation technique
+  └── .github/workflows/   -> CI/CD GitHub Actions
+
+FICHIERS CLES:
+  - run.py                 -> Script de lancement principal
+  - render.yaml            -> Configuration deploiement Render
+  - DEPLOYMENT_GUIDE.txt   -> Guide de deploiement gratuit
+  - .env.example           -> Template variables d'environnement
+
+================================================================================
+                    3. PIPELINE DE TRAITEMENT
+================================================================================
+
+ETAPE 1: ANALYSE EXPLORATOIRE (01_EDA.ipynb)
+  - Distribution de la TARGET (8% defaut)
+  - Analyse des valeurs manquantes
+  - Correlations avec la variable cible
+  - Identification des features importantes
+
+ETAPE 2: PREPROCESSING (02_Preprocessing_Features.ipynb)
+  - Feature engineering:
+    * CREDIT_INCOME_RATIO = AMT_CREDIT / AMT_INCOME_TOTAL
+    * ANNUITY_INCOME_RATIO = AMT_ANNUITY / AMT_INCOME_TOTAL
+    * AGE_YEARS = -DAYS_BIRTH / 365
+    * EXT_SOURCE_MEAN = moyenne des scores externes
+  - Agregation des tables auxiliaires (bureau, previous_app, etc.)
+  - Encodage LabelEncoder pour variables categorielles
+  - Imputation mediane des valeurs manquantes
+
+ETAPE 3: ENTRAINEMENT (03_Model_Training_MLflow.ipynb)
+  - Algorithme: LightGBM avec class_weight='balanced'
+  - Tracking MLflow: parametres, metriques, artifacts
+  - Optimisation du seuil selon le cout metier
+  - Enregistrement dans le Model Registry
+
+ETAPE 4: MONITORING DRIFT (04_Drift_Evidently.ipynb)
+  - Comparaison train (reference) vs test (production)
+  - Generation rapport HTML Evidently
+  - Detection des features qui derivent
+
+================================================================================
+                    4. RESULTATS DU MODELE
+================================================================================
+
+METRIQUES AVEC SEUIL PAR DEFAUT (0.5):
+  - AUC: 0.7683
+  - Accuracy: 75.5%
+  - Recall: 62.5%
+  - Cout metier: 9,524
+
+METRIQUES AVEC SEUIL OPTIMAL (0.44):
+  - AUC: 0.7683 (inchange)
+  - Accuracy: 70.5%
+  - Recall: 70.3% (amelioration +7.8%)
+  - Cout metier: 9,413 (reduction -1.2%)
+
+VALIDATION:
+  - AUC < 0.82 confirme l'absence d'overfitting
+  - Le seuil optimal detecte plus de defauts (moins de FN)
+  - Trade-off accepte: plus de FP mais cout total reduit
+
+TOP 5 FEATURES:
+  1. EXT_SOURCE_2 (score externe credit)
+  2. EXT_SOURCE_3 (score externe credit)
+  3. DAYS_BIRTH (age du client)
+  4. DAYS_EMPLOYED (anciennete emploi)
+  5. AMT_CREDIT (montant du credit)
+
+================================================================================
+                    5. API ET ENDPOINTS
+================================================================================
+
+FRAMEWORK: FastAPI
+
+ENDPOINTS DISPONIBLES:
+  GET  /              -> Page d'accueil
+  GET  /health        -> Health check
+  GET  /model/info    -> Informations du modele
+  GET  /model/features -> Liste des features
+  POST /predict       -> Prediction individuelle
+  POST /predict/batch -> Predictions en batch
+  POST /predict/explain -> Prediction avec explications
+
+EXEMPLE DE REQUETE:
+  curl -X POST "http://localhost:8000/predict" \
+    -H "Content-Type: application/json" \
+    -d '{"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000}}'
+
+EXEMPLE DE REPONSE:
+  {
+    "probability": 0.23,
+    "prediction": 0,
+    "decision": "approved",
+    "threshold": 0.44
+  }
+
+================================================================================
+                    6. DASHBOARD STREAMLIT
+================================================================================
+
+FONCTIONNALITES:
+  - Saisie manuelle des caracteristiques client
+  - Visualisation du score (jauge de risque)
+  - Explications SHAP des facteurs de decision
+  - Import CSV pour predictions batch
+  - Documentation integree
+
+ACCESSIBILITE WCAG:
+  - Contraste minimum 4.5:1
+  - Couleurs non seules pour transmettre l'information
+  - Textes alternatifs
+  - Redimensionnement du texte supporte
+
+LANCEMENT:
+  python run.py dashboard
+
+================================================================================
+                    7. DEPLOIEMENT GRATUIT
+================================================================================
+
+OPTION RECOMMANDEE: RENDER (API)
+  1. Connecter GitHub a Render
+  2. Creer Web Service avec render.yaml
+  3. URL: https://votre-app.onrender.com
+  Note: Cold start de 30-60 sec apres inactivite (tier gratuit)
+
+OPTION DASHBOARD: STREAMLIT CLOUD
+  1. Aller sur share.streamlit.io
+  2. Deployer streamlit_app/app.py
+  3. Configurer API_URL dans les Secrets
+
+VARIABLES D'ENVIRONNEMENT:
+  PORT=8000
+  MODEL_PATH=./models/lgbm_model.joblib
+  API_URL=http://localhost:8000
+  MLFLOW_TRACKING_URI=./mlruns
+
+================================================================================
+                    8. CI/CD GITHUB ACTIONS
+================================================================================
+
+WORKFLOW CI (ci.yml):
+  - Linting avec flake8, black, isort
+  - Tests unitaires avec pytest
+  - Couverture de code
+
+WORKFLOW CD (deploy.yml):
+  - Build image Docker
+  - Push vers GitHub Container Registry
+  - Deploy automatique sur Render
+
+================================================================================
+                    9. COMMANDES PRINCIPALES
+================================================================================
+
+# Installation
+conda env create -f environment.yml
+conda activate home-credit-scoring
+
+# Entrainement
+python run.py train --sample 0.3
+
+# API
+python run.py api
+
+# Dashboard
+python run.py dashboard
+
+# MLflow UI
+python run.py mlflow
+
+# Tests
+python run.py test --coverage
+
+# API + Dashboard ensemble
+python run.py all
+
+================================================================================
+                    10. FICHIERS DE MEMOIRE (memory-bank/)
+================================================================================
+
+01_projet_overview.txt   -> Vue d'ensemble complete du projet
+02_mlops_vocabulaire.txt -> Definitions des termes techniques
+03_exigences_couverture.txt -> Verification des exigences
+04_resultats_modele.txt  -> Analyse detaillee des resultats
+
+================================================================================
+                    11. COUVERTURE DES EXIGENCES
+================================================================================
+
+MLOPS:
+  [OK] Tracking MLflow des experimentations
+  [OK] Model Registry pour stockage centralise
+  [OK] Pipeline reproductible avec seed fixe
+  [OK] CI/CD avec GitHub Actions
+  [OK] Tests unitaires automatises
+  [OK] Data drift avec Evidently
+
+MODELISATION:
+  [OK] Encodage des variables categorielles
+  [OK] Feature engineering (ratios, conversions)
+  [OK] Gestion du desequilibre (class_weight)
+  [OK] Cout metier asymetrique (FN=10, FP=1)
+  [OK] Optimisation du seuil
+  [OK] Cross-validation disponible
+  [OK] Feature importance globale et locale (SHAP)
+
+DEPLOIEMENT:
+  [OK] API FastAPI fonctionnelle
+  [OK] Dashboard Streamlit
+  [OK] Documentation complete
+  [OK] Guide de deploiement gratuit
+
+================================================================================
+                    12. CONCLUSION
+================================================================================
+
+Ce projet implemente un pipeline MLOps complet pour le scoring credit:
+
+1. Les donnees sont preprocessees avec feature engineering avance
+2. Le modele LightGBM est optimise pour le cout metier
+3. Le seuil de decision (0.44) minimise les pertes financieres
+4. L'API permet des predictions en production
+5. Le dashboard offre transparence aux charges de relation client
+6. Le monitoring detecte le drift des donnees
+7. Le CI/CD assure un deploiement continu
+
+POINTS FORTS:
+  - Architecture modulaire et maintenable
+  - Documentation exhaustive
+  - Tests unitaires couvrant les fonctions critiques
+  - Explicabilite avec SHAP
+
+AMELIORATIONS FUTURES:
+  - Ajouter GridSearchCV explicite
+  - Implementer alertes de drift en temps reel
+  - Ajouter plus de modeles pour comparaison
+
+================================================================================

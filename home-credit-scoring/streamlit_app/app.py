@@ -32,7 +32,17 @@ st.set_page_config(
 # ============================================
 # Variables globales
 # ============================================
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+# Endpoint API par défaut (hardcodé pour déploiement/CI stable)
+API_URL = "http://localhost:8000"
+
+# Chemins locaux pour fallback (prediction locale si l'API est inaccessible)
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "lgbm_model.joblib")
+PREPROCESSOR_PATH = os.path.join(PROJECT_ROOT, "models", "preprocessor.joblib")
+
+_LOCAL_MODEL_LOADED = False
+_LOCAL_MODEL = None
+_LOCAL_PREPROCESSOR = None
 
 # ============================================
 # Fonctions utilitaires
@@ -71,6 +81,7 @@ def get_model_features() -> Optional[list]:
 
 def predict(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
     """Effectue une prédiction via l'API."""
+    # Première tentative: appel à l'API
     try:
         response = requests.post(
             f"{API_URL}/predict",
@@ -79,13 +90,21 @@ def predict(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
         )
         if response.status_code == 200:
             return response.json()
+    except Exception:
+        # Silent fallback to local prediction
+        pass
+
+    # Fallback local: charger modèle + préprocesseur et prédire
+    try:
+        return local_predict(features)
     except Exception as e:
-        st.error(f"Erreur de prédiction: {e}")
-    return None
+        st.error(f"Erreur de prédiction locale: {e}")
+        return None
 
 
 def explain(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
     """Obtient l'explication SHAP via l'API."""
+    # Essayer via API
     try:
         response = requests.post(
             f"{API_URL}/predict/explain",
@@ -94,9 +113,98 @@ def explain(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
         )
         if response.status_code == 200:
             return response.json()
+    except Exception:
+        pass
+
+    # Fallback local (SHAP si disponible)
+    try:
+        return local_explain(features)
     except Exception as e:
-        st.error(f"Erreur d'explication: {e}")
-    return None
+        st.error(f"Erreur d'explication locale: {e}")
+        return None
+
+
+def _load_local_model():
+    """Charge et met en cache le préprocesseur et le modèle locaux."""
+    global _LOCAL_MODEL_LOADED, _LOCAL_MODEL, _LOCAL_PREPROCESSOR
+    if _LOCAL_MODEL_LOADED:
+        return
+    try:
+        import joblib
+        if os.path.exists(MODEL_PATH) and os.path.exists(PREPROCESSOR_PATH):
+            _LOCAL_PREPROCESSOR = joblib.load(PREPROCESSOR_PATH)
+            _LOCAL_MODEL = joblib.load(MODEL_PATH)
+            _LOCAL_MODEL_LOADED = True
+    except Exception:
+        _LOCAL_MODEL_LOADED = False
+
+
+def local_predict(features: Dict[str, float]) -> Dict[str, Any]:
+    """Effectue une prédiction en local en cas d'indisponibilité de l'API."""
+    _load_local_model()
+    if not _LOCAL_MODEL_LOADED:
+        raise RuntimeError("Modèle local indisponible (models/lgbm_model.joblib manquant)")
+
+    # Préparer dataframe d'entrée
+    df = pd.DataFrame([features])
+
+    # Appliquer préprocessing si disponible
+    X = df
+    if _LOCAL_PREPROCESSOR is not None:
+        try:
+            X = _LOCAL_PREPROCESSOR.transform(df)
+        except Exception:
+            # Si transform échoue, tenter d'utiliser le dataframe tel quel
+            X = df
+
+    # Prédiction
+    try:
+        proba = _LOCAL_MODEL.predict_proba(X)[:, 1]
+        prob = float(proba[0])
+    except Exception:
+        # Certains modèles retournent directement une prédiction continue
+        pred = _LOCAL_MODEL.predict(X)
+        prob = float(pred[0])
+
+    # Seuil par défaut (fallback)
+    threshold = 0.44
+    decision = "approved" if prob < threshold else "rejected"
+
+    return {"probability": prob, "prediction": int(prob >= threshold), "decision": decision, "threshold": threshold}
+
+
+def local_explain(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
+    """Calcule une explication locale via SHAP si disponible."""
+    _load_local_model()
+    if not _LOCAL_MODEL_LOADED:
+        raise RuntimeError("Modèle local indisponible pour explication")
+
+    try:
+        import shap
+    except Exception:
+        raise RuntimeError("SHAP non installé dans l'environnement; installez 'shap' pour obtenir des explications locales")
+
+    df = pd.DataFrame([features])
+    X = df
+    if _LOCAL_PREPROCESSOR is not None:
+        try:
+            X = _LOCAL_PREPROCESSOR.transform(df)
+        except Exception:
+            X = df
+
+    explainer = shap.Explainer(_LOCAL_MODEL)
+    shap_values = explainer(X)
+
+    # Renvoyer un mapping feature -> shap value (pour la première instance)
+    try:
+        shap_dict = {name: float(val) for name, val in zip(df.columns, shap_values.values[0][: len(df.columns)])}
+    except Exception:
+        # Fallback: utiliser summary_values si formes différentes
+        shap_dict = {f: float(v) for f, v in zip(df.columns, shap_values.values[0])}
+
+    base_value = float(shap_values.base_values[0]) if hasattr(shap_values, 'base_values') else 0.5
+
+    return {"shap_values": shap_dict, "base_value": base_value}
 
 
 def create_gauge_chart(probability: float, threshold: float = 0.35) -> go.Figure:
@@ -196,25 +304,20 @@ def main():
     # Sidebar - Configuration
     with st.sidebar:
         st.header("⚙️ Configuration")
-        
-        # URL de l'API
-        global API_URL
-        API_URL = st.text_input("URL de l'API", value=API_URL)
-        
-        # Vérification de l'API
-        if st.button("🔄 Vérifier la connexion"):
-            if check_api_health():
-                st.success("✅ API accessible")
-            else:
-                st.error("❌ API inaccessible")
-        
+
+        # URL de l'API (hardcodée pour le déploiement ; non modifiable depuis l'UI)
+        st.markdown(f"**API URL:** {API_URL}")
+
+        # NOTE: Les vérifications de santé doivent être réalisées côté backend et dans la CI.
+        # L'application affiche les informations du modèle si l'API répond.
+
         # Informations du modèle
         st.header("📊 Informations modèle")
         model_info = get_model_info()
         if model_info:
             st.json(model_info)
         else:
-            st.info("Connectez-vous à l'API pour voir les infos")
+            st.info("Informations non disponibles via l'API. L'application utilisera le modèle local si présent.")
     
     # Contenu principal
     tab1, tab2, tab3 = st.tabs(["📝 Saisie manuelle", "📁 Import fichier", "📖 Documentation"])
@@ -262,8 +365,8 @@ def main():
         
         with col2:
             st.subheader("👤 Informations personnelles")
-            age = st.slider("Âge", 18, 80, 35)
-            features["DAYS_BIRTH"] = -age * 365
+            age = st.number_input("Âge (années)", min_value=18, max_value=120, value=35, step=1)
+            features["DAYS_BIRTH"] = -int(age) * 365
             
             years_employed = st.slider("Années d'emploi", 0, 50, 5)
             features["DAYS_EMPLOYED"] = -years_employed * 365
