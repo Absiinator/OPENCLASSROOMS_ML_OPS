@@ -17,6 +17,25 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
+class MockPreprocessor:
+    """Mock du préprocesseur."""
+    
+    def __init__(self):
+        self.feature_names = ['feature1', 'feature2', 'feature3']
+    
+    def transform(self, df):
+        """Transforme un DataFrame en array numpy."""
+        # Retourne simplement les valeurs des colonnes connues
+        features = []
+        for fname in self.feature_names:
+            if fname in df.columns:
+                features.append(df[fname].values)
+            else:
+                # feature manquante -> 0
+                features.append(np.zeros(len(df)))
+        return np.column_stack(features) if features else np.zeros((len(df), len(self.feature_names)))
+
+
 class MockModel:
     """Mock du modèle de scoring."""
     
@@ -67,10 +86,11 @@ def mock_dependencies():
 def client(mock_dependencies):
     """Crée un client de test avec le modèle mocké."""
     # Import après le mock
-    from api.main import app, get_model, get_explainer, get_model_info
+    from api.main import app, get_model, get_preprocessor, get_explainer, get_model_info
     
     # Override les dépendances
     app.dependency_overrides[get_model] = lambda: MockModel()
+    app.dependency_overrides[get_preprocessor] = lambda: MockPreprocessor()
     app.dependency_overrides[get_explainer] = lambda: MockExplainer()
     app.dependency_overrides[get_model_info] = lambda: {
         'model_name': 'test_model',

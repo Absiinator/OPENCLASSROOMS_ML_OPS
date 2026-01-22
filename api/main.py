@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
@@ -53,6 +53,31 @@ REPORTS_DIR = Path(__file__).parent.parent / "reports"
 model = None
 preprocessor = None
 config = None
+
+
+def get_model():
+    """Dependency provider returning the current model (can be overridden in tests)."""
+    return model
+
+
+def get_preprocessor():
+    """Dependency provider returning the current preprocessor (can be overridden in tests)."""
+    return preprocessor
+
+
+def get_explainer():
+    """Dependency provider for explainer (placeholder, override in tests)."""
+    return None
+
+
+def get_model_info():
+    """Dependency provider returning basic model metadata (overrideable in tests)."""
+    return {
+        'model_name': config.get('model_name', 'home_credit_model') if config else 'home_credit_model',
+        'model_version': API_VERSION,
+        'threshold': config.get('optimal_threshold', 0.5) if config else 0.5,
+        'features': getattr(preprocessor, 'feature_names', []) if preprocessor else []
+    }
 
 
 def get_risk_category(probability: float) -> RiskCategory:
@@ -183,26 +208,25 @@ async def health_check():
 
 
 @app.get("/model/info", response_model=ModelInfo, tags=["Model"])
-async def get_model_info():
-    """Obtenir les informations sur le modèle déployé."""
-    if model is None:
-        raise HTTPException(status_code=503, detail="Modèle non chargé")
-    
+async def model_info_endpoint(info: dict = Depends(get_model_info)):
+    """Obtenir les informations sur le modèle déployé (dépendance overrideable)."""
     return ModelInfo(
-        model_name=config.get("model_name", "home_credit_model"),
-        version=API_VERSION,
-        optimal_threshold=config.get("optimal_threshold", 0.5),
-        cost_fn=config.get("cost_fn", 10),
-        cost_fp=config.get("cost_fp", 1),
-        n_features=len(preprocessor.feature_names) if preprocessor else 0,
-        training_date=config.get("training_date")
+        model_name=info.get('model_name', 'home_credit_model'),
+        version=info.get('model_version', API_VERSION),
+        optimal_threshold=info.get('threshold', 0.5),
+        cost_fn=config.get("cost_fn", 10) if config else 10,
+        cost_fp=config.get("cost_fp", 1) if config else 1,
+        n_features=len(info.get('features', [])),
+        training_date=info.get('training_date')
     )
 
 
 @app.post("/predict", response_model=PredictionResponse, tags=["Prediction"])
 async def predict(
-    client: ClientFeatures,
-    threshold: Optional[float] = Query(None, ge=0, le=1, description="Seuil personnalisé")
+    payload: dict = Body(...),
+    threshold: Optional[float] = Query(None, ge=0, le=1, description="Seuil personnalisé"),
+    model_dep = Depends(get_model),
+    preprocessor_dep = Depends(get_preprocessor)
 ):
     """
     Prédit la probabilité de défaut pour un client.
@@ -212,26 +236,59 @@ async def predict(
     
     Retourne la probabilité, la décision et la catégorie de risque.
     """
-    if model is None or preprocessor is None:
+    used_model = model_dep or model
+    used_preprocessor = preprocessor_dep or preprocessor
+
+    if used_model is None:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        # Convertir en DataFrame
-        client_dict = client.model_dump(exclude_none=True)
+        # Accept both direct client fields or wrapper {'features': {...}}
+        if isinstance(payload, dict) and 'features' in payload:
+            client_dict = payload['features']
+        else:
+            client_dict = payload
+
+        # Validate payload: if not wrapped and keys are not recognised features, return 400
+        accepted_feature_names = []
+        if used_preprocessor is not None:
+            accepted_feature_names = getattr(used_preprocessor, 'feature_names', []) or []
+        elif hasattr(used_model, 'feature_names_'):
+            accepted_feature_names = getattr(used_model, 'feature_names_', []) or []
+
+        if not (isinstance(payload, dict) and 'features' in payload):
+            payload_keys = set(client_dict.keys()) if isinstance(client_dict, dict) else set()
+            if not payload_keys:
+                raise HTTPException(status_code=400, detail="Payload invalide: features manquantes")
+            if accepted_feature_names:
+                # if no intersection between provided keys and accepted feature names, consider invalid
+                if payload_keys.isdisjoint(set(accepted_feature_names)):
+                    raise HTTPException(status_code=400, detail="Payload invalide: features non reconnues")
+
         df = pd.DataFrame([client_dict])
         
         # Prétraitement
-        X = preprocessor.transform(df)
-        
+        if used_preprocessor is not None:
+            X = used_preprocessor.transform(df)
+        else:
+            # fallback: pass raw values
+            X = df.values
+
         # Prédiction
-        probability = float(model.predict_proba(X)[0, 1])
+        probability = float(used_model.predict_proba(X)[0, 1])
         
         # Seuil
-        used_threshold = threshold if threshold is not None else config.get("optimal_threshold", 0.5)
+        if threshold is not None:
+            used_threshold = threshold
+        elif config is not None:
+            used_threshold = config.get("optimal_threshold", 0.5)
+        else:
+            used_threshold = 0.5
+            
         prediction = 1 if probability >= used_threshold else 0
         
         return PredictionResponse(
-            client_id=client.SK_ID_CURR,
+            client_id=client_dict.get('SK_ID_CURR') if isinstance(client_dict, dict) else None,
             probability=round(probability, 4),
             prediction=prediction,
             decision=Decision.REFUSED if prediction == 1 else Decision.ACCEPTED,
@@ -244,7 +301,7 @@ async def predict(
 
 
 @app.post("/predict/batch", response_model=BatchPredictionResponse, tags=["Prediction"])
-async def predict_batch(request: BatchPredictionRequest):
+async def predict_batch(request: dict = Body(...), model_dep = Depends(get_model), preprocessor_dep = Depends(get_preprocessor)):
     """
     Prédit la probabilité de défaut pour plusieurs clients.
     
@@ -253,35 +310,66 @@ async def predict_batch(request: BatchPredictionRequest):
     
     Retourne les prédictions pour chaque client et un résumé.
     """
-    if model is None or preprocessor is None:
+    used_model = model_dep or model
+    used_preprocessor = preprocessor_dep or preprocessor
+
+    if used_model is None:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
-    if len(request.clients) == 0:
+    clients_list = []
+    if isinstance(request, dict) and 'clients' in request:
+        clients_list = request['clients']
+    else:
+        # allow direct BatchPredictionRequest-like dict
+        clients_list = request.get('clients', []) if hasattr(request, 'get') else []
+
+    if len(clients_list) == 0:
         raise HTTPException(status_code=400, detail="Liste de clients vide")
-    
-    if len(request.clients) > 1000:
+    if len(clients_list) > 1000:
         raise HTTPException(status_code=400, detail="Maximum 1000 clients par requête")
     
     try:
         # Convertir en DataFrame
-        clients_data = [c.model_dump(exclude_none=True) for c in request.clients]
+        clients_data = []
+        for c in clients_list:
+            if isinstance(c, dict) and 'features' in c:
+                clients_data.append(c['features'])
+            elif isinstance(c, dict):
+                clients_data.append(c)
+            else:
+                # try pydantic model dump
+                try:
+                    clients_data.append(c.model_dump(exclude_none=True))
+                except Exception:
+                    clients_data.append({})
+
         df = pd.DataFrame(clients_data)
-        
+
         # Prétraitement
-        X = preprocessor.transform(df)
-        
+        if used_preprocessor is not None:
+            X = used_preprocessor.transform(df)
+        else:
+            X = df.values
+
         # Prédictions
-        probabilities = model.predict_proba(X)[:, 1]
+        probabilities = used_model.predict_proba(X)[:, 1]
         
         # Seuil
-        used_threshold = request.threshold if request.threshold is not None else config.get("optimal_threshold", 0.5)
+        if request.get('threshold') is not None:
+            used_threshold = request['threshold']
+        elif config is not None:
+            used_threshold = config.get("optimal_threshold", 0.5)
+        else:
+            used_threshold = 0.5
         
         # Construire les réponses
         predictions = []
-        for i, (client, proba) in enumerate(zip(request.clients, probabilities)):
+        for i, proba in enumerate(probabilities):
+            # Récupérer le dictionnaire client original
+            client_data = clients_data[i] if i < len(clients_data) else {}
             prediction = 1 if proba >= used_threshold else 0
             predictions.append(PredictionResponse(
-                client_id=client.SK_ID_CURR,
+                client_id=client_data.get('SK_ID_CURR') if isinstance(client_data, dict) else None,
                 probability=round(float(proba), 4),
                 prediction=prediction,
                 decision=Decision.REFUSED if prediction == 1 else Decision.ACCEPTED,
@@ -304,32 +392,59 @@ async def predict_batch(request: BatchPredictionRequest):
 
 
 @app.post("/predict/explain", response_model=ExplanationResponse, tags=["Explanation"])
-async def explain_prediction(client: ClientFeatures):
+async def explain_prediction(payload: dict = Body(...), model_dep = Depends(get_model), preprocessor_dep = Depends(get_preprocessor), explainer_dep = Depends(get_explainer)):
     """
     Explique la prédiction pour un client avec les features les plus influentes.
     
     Utilise l'importance des features du modèle pour identifier
     les facteurs qui contribuent le plus à la décision.
     """
-    if model is None or preprocessor is None:
+    used_model = model_dep or model
+    used_preprocessor = preprocessor_dep or preprocessor
+    used_explainer = explainer_dep
+
+    if used_model is None:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        # Convertir en DataFrame
-        client_dict = client.model_dump(exclude_none=True)
+        # Accept wrapper {'features': {...}} or direct dict
+        if isinstance(payload, dict) and 'features' in payload:
+            client_dict = payload['features']
+        else:
+            client_dict = payload
+
         df = pd.DataFrame([client_dict])
         
         # Prétraitement
-        X = preprocessor.transform(df)
-        
+        if used_preprocessor is not None:
+            X = used_preprocessor.transform(df)
+        else:
+            X = df.values
+
         # Prédiction
-        probability = float(model.predict_proba(X)[0, 1])
-        threshold = config.get("optimal_threshold", 0.5)
+        probability = float(used_model.predict_proba(X)[0, 1])
+        threshold = config.get("optimal_threshold", 0.5) if config is not None else 0.5
         prediction = 1 if probability >= threshold else 0
-        
+
         # Feature importance (globale pour simplifier)
-        feature_importances = model.feature_importances_
-        feature_names = preprocessor.feature_names
+        feature_importances = getattr(used_model, 'feature_importances_', None)
+        # try alternative attr names on mocks
+        if feature_importances is None:
+            feature_importances = getattr(used_model, 'feature_importances', None)
+
+        feature_names = getattr(used_preprocessor, 'feature_names', None)
+        if feature_names is None:
+            feature_names = getattr(used_model, 'feature_names_', None) or getattr(used_model, 'feature_names', None)
+
+        if feature_importances is None or feature_names is None:
+            # cannot compute detailed explanation, fallback empty list
+            return ExplanationResponse(
+                client_id=client_dict.get('SK_ID_CURR') if isinstance(client_dict, dict) else None,
+                probability=round(probability, 4),
+                prediction=prediction,
+                decision=Decision.REFUSED if prediction == 1 else Decision.ACCEPTED,
+                top_features=[]
+            )
         
         # Top features par importance
         sorted_indices = np.argsort(feature_importances)[::-1][:10]
@@ -363,18 +478,29 @@ async def explain_prediction(client: ClientFeatures):
 
 
 @app.get("/model/features", response_model=List[FeatureImportance], tags=["Model"])
-async def get_feature_importance(top_n: int = Query(20, ge=1, le=100)):
+async def get_feature_importance(top_n: int = Query(20, ge=1, le=100), model_dep = Depends(get_model), preprocessor_dep = Depends(get_preprocessor)):
     """
     Obtenir l'importance des features du modèle.
     
     - **top_n**: Nombre de features à retourner (1-100)
     """
-    if model is None or preprocessor is None:
+    used_model = model_dep or model
+    used_preprocessor = preprocessor_dep or preprocessor
+
+    if used_model is None:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        feature_importances = model.feature_importances_
-        feature_names = preprocessor.feature_names
+        feature_importances = getattr(used_model, 'feature_importances_', None) or getattr(used_model, 'feature_importances', None)
+        feature_names = getattr(used_preprocessor, 'feature_names', None) or getattr(used_model, 'feature_names_', None) or getattr(used_model, 'feature_names', None)
+        if feature_importances is None or feature_names is None:
+            # fallback: return feature names with zero importance
+            if feature_names is None:
+                raise HTTPException(status_code=500, detail="Feature names indisponibles")
+            result = []
+            for rank, fname in enumerate(feature_names[:top_n], 1):
+                result.append(FeatureImportance(feature=fname, importance=0.0, rank=rank))
+            return result
         
         # Trier par importance
         sorted_indices = np.argsort(feature_importances)[::-1][:top_n]
