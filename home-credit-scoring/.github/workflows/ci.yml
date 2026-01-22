@@ -1,0 +1,215 @@
+# ============================================
+# CI - Intégration Continue
+# ============================================
+# Exécute les tests et validations sur chaque push/PR.
+# Le workflow deploy.yml attend la réussite de ce workflow.
+
+name: CI - Tests & Linting
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  PYTHON_VERSION: "3.10"
+
+jobs:
+  # ============================================
+  # Job 1: Linting et qualité du code
+  # ============================================
+  lint:
+    name: 🔍 Lint & Format
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: 📦 Installation des dépendances de linting
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black isort
+      
+      - name: 🎨 Vérification du formatage (black)
+        run: black --check --diff src/ api/ tests/ || true
+      
+      - name: 📋 Vérification des imports (isort)
+        run: isort --check-only --diff src/ api/ tests/ || true
+      
+      - name: 🔍 Analyse statique (flake8)
+        run: flake8 src/ api/ tests/ --max-line-length=120 --ignore=E501,W503,E203 || true
+
+  # ============================================
+  # Job 2: Tests unitaires (BLOQUANT)
+  # ============================================
+  test:
+    name: 🧪 Tests Unitaires
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: 📦 Installation des dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r api/requirements.txt
+          pip install pytest pytest-cov pytest-xdist httpx
+          pip install -e .
+      
+      - name: 🧪 Exécution des tests
+        run: |
+          pytest tests/ -v --tb=short \
+            --cov=src --cov=api \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            --ignore=tests/test_api.py
+      
+      - name: 📊 Upload de la couverture
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  # ============================================
+  # Job 3: Tests de l'API (BLOQUANT)
+  # ============================================
+  test-api:
+    name: 🌐 Tests API
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: 📦 Installation des dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r api/requirements.txt
+          pip install pytest httpx
+      
+      - name: 🧪 Tests API
+        run: pytest tests/test_api.py -v --tb=short
+
+  # ============================================
+  # Job 4: Build Docker API
+  # ============================================
+  build-docker:
+    name: 🐳 Build Docker (API)
+    runs-on: ubuntu-latest
+    needs: [test, test-api]
+    
+    steps:
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+      
+      - name: 🐳 Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: 🔨 Build image API
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./api/Dockerfile
+          push: false
+          tags: home-credit-api:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================
+  # Job 5: Build Docker Streamlit
+  # ============================================
+  build-streamlit:
+    name: 🐳 Build Docker (Streamlit)
+    runs-on: ubuntu-latest
+    needs: [test, test-api]
+    
+    steps:
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+      
+      - name: 🐳 Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: 🔨 Build image Streamlit
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./streamlit_app/Dockerfile
+          push: false
+          tags: home-credit-dashboard:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================
+  # Job 6: Analyse de sécurité
+  # ============================================
+  security:
+    name: 🔒 Sécurité
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: 📦 Installation outils sécurité
+        run: pip install bandit safety
+      
+      - name: 🔍 Analyse de sécurité (bandit)
+        run: bandit -r src/ api/ -ll --skip B101 || true
+      
+      - name: 📋 Vérification des vulnérabilités
+        run: |
+          pip install -r api/requirements.txt
+          safety check --full-report || true
+        continue-on-error: true
+
+  # ============================================
+  # Job final: Validation CI (requis pour deploy)
+  # ============================================
+  ci-success:
+    name: ✅ CI Success
+    runs-on: ubuntu-latest
+    needs: [test, test-api, build-docker, build-streamlit]
+    if: always()
+    
+    steps:
+      - name: 🔍 Vérification des résultats
+        run: |
+          if [[ "${{ needs.test.result }}" != "success" ]]; then
+            echo "❌ Tests unitaires échoués"
+            exit 1
+          fi
+          if [[ "${{ needs.test-api.result }}" != "success" ]]; then
+            echo "❌ Tests API échoués"
+            exit 1
+          fi
+          echo "✅ Tous les tests ont réussi - Déploiement autorisé"

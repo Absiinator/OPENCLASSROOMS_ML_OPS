@@ -58,10 +58,6 @@ jobs:
     needs: check-ci
     if: needs.check-ci.outputs.should_deploy == 'true'
     
-    permissions:
-      contents: read
-      packages: write
-    
     steps:
       - name: 📥 Checkout du code
         uses: actions/checkout@v4
@@ -80,7 +76,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/openclassrooms-ml-ops-api
+          images: ghcr.io/${{ github.repository }}-api
           tags: |
             type=ref,event=branch
             type=sha,prefix=
@@ -107,10 +103,6 @@ jobs:
     needs: check-ci
     if: needs.check-ci.outputs.should_deploy == 'true'
     
-    permissions:
-      contents: read
-      packages: write
-    
     steps:
       - name: 📥 Checkout du code
         uses: actions/checkout@v4
@@ -129,7 +121,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/openclassrooms-ml-ops-dashboard
+          images: ghcr.io/${{ github.repository }}-dashboard
           tags: |
             type=ref,event=branch
             type=sha,prefix=
