@@ -53,6 +53,9 @@ def compute_business_cost(
     Returns:
         Coût métier total
     """
+    if len(y_true) == 0 or len(y_pred) == 0:
+        raise ValueError("Les tableaux y_true et y_pred ne peuvent pas être vides")
+    
     # Use labels parameter to ensure 2x2 confusion matrix even for edge cases
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
     
@@ -101,7 +104,20 @@ def compute_cost_matrix(
     Returns:
         Dictionnaire avec TP, TN, FP, FN, coûts, et métriques
     """
-    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+    if len(y_true) == 0 or len(y_pred) == 0:
+        raise ValueError("Les tableaux y_true et y_pred ne peuvent pas être vides")
+    
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+    if cm.shape == (2, 2):
+        tn, fp, fn, tp = cm.ravel()
+    else:
+        tn, fp, fn, tp = 0, 0, 0, 0
+        unique = np.unique(np.concatenate([y_true, y_pred]))
+        if len(unique) == 1:
+            if unique[0] == 0:
+                tn = len(y_true)
+            else:
+                tp = len(y_true)
     
     cost_from_fn = fn * cost_fn
     cost_from_fp = fp * cost_fp
@@ -198,7 +214,18 @@ def compute_all_metrics(
     }
     
     # Ajouter matrice de confusion
-    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+    if cm.shape == (2, 2):
+        tn, fp, fn, tp = cm.ravel()
+    else:
+        tn, fp, fn, tp = 0, 0, 0, 0
+        unique = np.unique(np.concatenate([y_true, y_pred]))
+        if len(unique) == 1:
+            if unique[0] == 0:
+                tn = len(y_true)
+            else:
+                tp = len(y_true)
+    
     metrics.update({
         'TP': int(tp),
         'TN': int(tn),
