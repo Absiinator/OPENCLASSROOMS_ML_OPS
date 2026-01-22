@@ -53,7 +53,21 @@ def compute_business_cost(
     Returns:
         Coût métier total
     """
-    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+    # Use labels parameter to ensure 2x2 confusion matrix even for edge cases
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+    
+    # Handle edge case where confusion matrix might not be 2x2
+    if cm.shape == (2, 2):
+        tn, fp, fn, tp = cm.ravel()
+    else:
+        # Only one class present - initialize zeros
+        tn, fp, fn, tp = 0, 0, 0, 0
+        unique = np.unique(np.concatenate([y_true, y_pred]))
+        if len(unique) == 1:
+            if unique[0] == 0:
+                tn = len(y_true)
+            else:
+                tp = len(y_true)
     
     total_cost = (fn * cost_fn) + (fp * cost_fp)
     
