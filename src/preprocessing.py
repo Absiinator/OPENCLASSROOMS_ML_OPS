@@ -29,6 +29,68 @@ DATA_DIR = PROJECT_ROOT / "data"
 MODELS_DIR = PROJECT_ROOT / "models"
 
 
+def clean_feature_names(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Nettoie les noms de colonnes en remplaçant les caractères spéciaux.
+    
+    Args:
+        df: DataFrame avec colonnes à nettoyer
+        
+    Returns:
+        DataFrame avec noms de colonnes nettoyés
+    """
+    df = df.copy()
+    df.columns = df.columns.str.replace('[', '_', regex=False)
+    df.columns = df.columns.str.replace(']', '_', regex=False)
+    df.columns = df.columns.str.replace('(', '_', regex=False)
+    df.columns = df.columns.str.replace(')', '_', regex=False)
+    df.columns = df.columns.str.replace('<', '_', regex=False)
+    df.columns = df.columns.str.replace('>', '_', regex=False)
+    df.columns = df.columns.str.replace(',', '_', regex=False)
+    df.columns = df.columns.str.replace(':', '_', regex=False)
+    df.columns = df.columns.str.replace('/', '_', regex=False)
+    df.columns = df.columns.str.replace(' ', '_', regex=False)
+    return df
+
+
+def reduce_memory_usage(df: pd.DataFrame, verbose: bool = False) -> pd.DataFrame:
+    """
+    Réduit l'utilisation mémoire d'un DataFrame en optimisant les types de données.
+    
+    Args:
+        df: DataFrame à optimiser
+        verbose: Afficher les informations de réduction
+        
+    Returns:
+        DataFrame optimisé
+    """
+    start_mem = df.memory_usage(deep=True).sum() / 1024**2
+    
+    for col in df.columns:
+        col_type = df[col].dtype
+        
+        if col_type != object:
+            c_min = df[col].min()
+            c_max = df[col].max()
+            
+            if str(col_type)[:3] == 'int':
+                if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
+                    df[col] = df[col].astype(np.int8)
+                elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
+                    df[col] = df[col].astype(np.int16)
+                elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
+                    df[col] = df[col].astype(np.int32)
+            else:
+                if c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+                    df[col] = df[col].astype(np.float32)
+    
+    if verbose:
+        end_mem = df.memory_usage(deep=True).sum() / 1024**2
+        print(f'Memory usage decreased to {end_mem:5.2f} MB ({100 * (start_mem - end_mem) / start_mem:.1f}% reduction)')
+    
+    return df
+
+
 def load_application_data(data_dir: Path = DATA_DIR) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Charge les données application_train et application_test.

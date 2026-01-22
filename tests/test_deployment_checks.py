@@ -32,4 +32,3 @@ def test_data_describe(source):
     assert "n_rows" in body
     assert "n_columns" in body
     assert "describe" in body
-*** End Patch
