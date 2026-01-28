@@ -2,11 +2,14 @@
 Application Streamlit pour le scoring crédit Home Credit.
 =========================================================
 
-Interface utilisateur pour tester l'API de scoring.
-Permet de :
-- Saisir les caractéristiques d'un client
-- Obtenir une prédiction de risque de défaut
-- Visualiser les explications SHAP
+Interface utilisateur complète pour le scoring de crédit.
+Fonctionnalités :
+- Visualiser le score et la probabilité avec interprétation intelligible
+- Informations descriptives du client
+- Comparaison avec l'ensemble des clients ou groupes similaires
+- Accessibilité WCAG (contrastes, labels, navigation clavier)
+- Modification en temps réel des caractéristiques
+- Rapport de Data Drift
 """
 
 import streamlit as st
@@ -15,7 +18,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import json
 import os
 
@@ -30,15 +33,57 @@ st.set_page_config(
 )
 
 # ============================================
+# CSS pour l'accessibilité WCAG
+# ============================================
+st.markdown("""
+<style>
+    /* Contrastes élevés pour l'accessibilité WCAG AA */
+    .stMetric label {
+        color: #1a1a1a !important;
+        font-weight: 600 !important;
+    }
+    .stMetric [data-testid="stMetricValue"] {
+        color: #0a0a0a !important;
+        font-size: 1.5rem !important;
+    }
+    
+    /* Focus visible pour navigation clavier */
+    button:focus, input:focus, select:focus, a:focus {
+        outline: 3px solid #005fcc !important;
+        outline-offset: 2px !important;
+    }
+    
+    /* Indicateurs visuels clairs avec patterns */
+    .risk-low {
+        background-color: #d4edda !important;
+        color: #155724 !important;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 5px solid #28a745;
+    }
+    .risk-high {
+        background-color: #f8d7da !important;
+        color: #721c24 !important;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 5px solid #dc3545;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ============================================
 # Variables globales
 # ============================================
-# Endpoint API par défaut (hardcodé pour déploiement/CI stable)
-API_URL = "http://localhost:8000"
+# Endpoints configurés via variables d'environnement (déploiement GitHub Actions)
+API_URL = os.getenv("API_URL", "http://localhost:8000")
+MLFLOW_URL = os.getenv("MLFLOW_URL", "http://localhost:5002")  # Fallback local par défaut
 
-# Chemins locaux pour fallback (prediction locale si l'API est inaccessible)
+# Chemins locaux pour fallback
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "lgbm_model.joblib")
 PREPROCESSOR_PATH = os.path.join(PROJECT_ROOT, "models", "preprocessor.joblib")
+DRIFT_REPORT_PATH = os.path.join(PROJECT_ROOT, "reports", "evidently_full_report.html")
+DATA_PATH = os.path.join(PROJECT_ROOT, "data", "application_train.csv")
 
 _LOCAL_MODEL_LOADED = False
 _LOCAL_MODEL = None
@@ -207,6 +252,200 @@ def local_explain(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
     return {"shap_values": shap_dict, "base_value": base_value}
 
 
+# ============================================
+# Fonctions pour données de référence et comparaison
+# ============================================
+
+@st.cache_data(ttl=600)
+def load_reference_data() -> Optional[pd.DataFrame]:
+    """Charge les données de référence pour les comparaisons."""
+    if os.path.exists(DATA_PATH):
+        try:
+            df = pd.read_csv(DATA_PATH, nrows=10000)  # Limiter pour performance
+            return df
+        except Exception:
+            pass
+    return None
+
+
+def interpret_score(probability: float, threshold: float) -> Dict[str, str]:
+    """Génère une interprétation textuelle du score pour non-experts."""
+    distance_to_threshold = abs(probability - threshold)
+    
+    if probability < threshold:
+        decision = "ACCORDÉ"
+        if probability < threshold * 0.3:
+            confidence = "très élevée"
+            explanation = "Le profil du client présente des caractéristiques très favorables. Le risque de défaut est minimal."
+        elif probability < threshold * 0.6:
+            confidence = "élevée"
+            explanation = "Le profil du client est globalement positif. Le risque de défaut est faible."
+        else:
+            confidence = "modérée"
+            explanation = "Le profil du client est acceptable mais présente quelques points de vigilance."
+    else:
+        decision = "REFUSÉ"
+        if probability > threshold * 1.5:
+            confidence = "très élevée"
+            explanation = "Le profil du client présente des risques significatifs. Le défaut de paiement est probable."
+        elif probability > threshold * 1.2:
+            confidence = "élevée"
+            explanation = "Le profil du client présente plusieurs facteurs de risque importants."
+        else:
+            confidence = "modérée"
+            explanation = "Le profil du client est légèrement au-dessus du seuil de risque acceptable."
+    
+    return {
+        "decision": decision,
+        "confidence": confidence,
+        "explanation": explanation,
+        "probability_text": f"{probability*100:.1f}%",
+        "threshold_text": f"{threshold*100:.1f}%",
+        "distance_text": f"{distance_to_threshold*100:.1f} points"
+    }
+
+
+def get_feature_explanation(feature_name: str) -> str:
+    """Retourne une explication en langage naturel d'une feature."""
+    explanations = {
+        "AMT_INCOME_TOTAL": "Revenu annuel total du client en euros",
+        "AMT_CREDIT": "Montant total du crédit demandé",
+        "AMT_ANNUITY": "Montant de l'annuité (paiement périodique)",
+        "EXT_SOURCE_1": "Score de crédit externe (source 1) - Plus élevé = meilleur profil",
+        "EXT_SOURCE_2": "Score de crédit externe (source 2) - Plus élevé = meilleur profil",
+        "EXT_SOURCE_3": "Score de crédit externe (source 3) - Plus élevé = meilleur profil",
+        "CREDIT_INCOME_RATIO": "Ratio crédit/revenu - Plus bas = meilleure capacité",
+        "DAYS_BIRTH": "Âge du client (en jours depuis la naissance)",
+        "DAYS_EMPLOYED": "Ancienneté dans l'emploi actuel",
+    }
+    return explanations.get(feature_name, f"Caractéristique: {feature_name}")
+
+
+def create_comparison_chart(
+    client_value: float,
+    feature_name: str,
+    reference_data: pd.DataFrame,
+    group_filter: Optional[str] = None
+) -> Optional[go.Figure]:
+    """Crée un graphique de comparaison accessible."""
+    if feature_name not in reference_data.columns:
+        return None
+    
+    data = reference_data[feature_name].dropna()
+    
+    # Appliquer le filtre de groupe
+    if group_filter and group_filter != "Tous les clients":
+        if "TARGET" in reference_data.columns:
+            if group_filter == "Clients sans défaut (TARGET=0)":
+                data = reference_data[reference_data["TARGET"] == 0][feature_name].dropna()
+            elif group_filter == "Clients en défaut (TARGET=1)":
+                data = reference_data[reference_data["TARGET"] == 1][feature_name].dropna()
+    
+    fig = go.Figure()
+    
+    # Histogramme avec couleur accessible
+    fig.add_trace(go.Histogram(
+        x=data,
+        name="Distribution",
+        marker_color='#4169E1',  # Bleu royal - bon contraste
+        opacity=0.7,
+        hovertemplate="Valeur: %{x}<br>Nombre: %{y}<extra></extra>"
+    ))
+    
+    # Ligne verticale pour le client
+    fig.add_vline(
+        x=client_value,
+        line_width=4,
+        line_dash="dash",
+        line_color="#C41E3A",  # Rouge cardinal
+        annotation_text=f"Client: {client_value:.2f}",
+        annotation_position="top",
+        annotation_font_size=14,
+        annotation_font_color="#C41E3A"
+    )
+    
+    # Position du client (percentile)
+    percentile = (data < client_value).mean() * 100
+    
+    fig.update_layout(
+        title={
+            'text': f"<b>Distribution de {feature_name}</b><br><sup>Client au {percentile:.0f}e percentile</sup>",
+            'font': {'size': 16, 'color': '#1a1a1a'}
+        },
+        xaxis_title=feature_name,
+        yaxis_title="Nombre de clients",
+        height=400,
+        showlegend=False,
+        paper_bgcolor='white',
+        plot_bgcolor='white',
+        font={'family': 'Arial, sans-serif', 'color': '#1a1a1a'}
+    )
+    
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#e0e0e0')
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#e0e0e0')
+    
+    return fig
+
+
+def create_radar_comparison(
+    client_features: Dict[str, float],
+    reference_data: pd.DataFrame,
+    selected_features: List[str]
+) -> Optional[go.Figure]:
+    """Crée un graphique radar pour comparer plusieurs features."""
+    normalized_client = []
+    normalized_mean = []
+    
+    for feat in selected_features:
+        if feat in reference_data.columns and feat in client_features:
+            ref_data = reference_data[feat].dropna()
+            min_val, max_val = ref_data.min(), ref_data.max()
+            
+            if max_val > min_val:
+                client_norm = (client_features[feat] - min_val) / (max_val - min_val)
+                mean_norm = (ref_data.mean() - min_val) / (max_val - min_val)
+            else:
+                client_norm, mean_norm = 0.5, 0.5
+            
+            normalized_client.append(client_norm)
+            normalized_mean.append(mean_norm)
+    
+    if not normalized_client:
+        return None
+    
+    fig = go.Figure()
+    
+    # Population moyenne
+    fig.add_trace(go.Scatterpolar(
+        r=normalized_mean + [normalized_mean[0]],
+        theta=selected_features + [selected_features[0]],
+        fill='toself',
+        fillcolor='rgba(65, 105, 225, 0.3)',
+        line_color='#4169E1',
+        name='Moyenne population'
+    ))
+    
+    # Client
+    fig.add_trace(go.Scatterpolar(
+        r=normalized_client + [normalized_client[0]],
+        theta=selected_features + [selected_features[0]],
+        fill='toself',
+        fillcolor='rgba(196, 30, 58, 0.3)',
+        line_color='#C41E3A',
+        name='Client actuel'
+    ))
+    
+    fig.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+        showlegend=True,
+        title={'text': "<b>Comparaison multi-critères</b>", 'font': {'size': 16}},
+        height=500,
+        paper_bgcolor='white'
+    )
+    
+    return fig
+
+
 def create_gauge_chart(probability: float, threshold: float = 0.35) -> go.Figure:
     """Crée un graphique de jauge pour la probabilité."""
     
@@ -293,40 +532,81 @@ def create_shap_waterfall(shap_values: Dict[str, float], base_value: float) -> g
 
 def main():
     # En-tête
-    st.title("🏦 Home Credit Scoring")
+    st.title("🏦 Home Credit - Outil de Scoring")
     st.markdown("""
-    **Outil de scoring de crédit** basé sur un modèle de Machine Learning.
+    **Outil d'aide à la décision pour l'octroi de crédit**
     
-    Cette application permet d'évaluer le risque de défaut de paiement d'un client
-    en fonction de ses caractéristiques.
+    Cette application évalue le risque de défaut de paiement et fournit une interprétation 
+    claire du score pour chaque demande de crédit.
     """)
     
-    # Sidebar - Configuration
+    # Charger les données de référence pour comparaison
+    reference_data = load_reference_data()
+    
+    # Sidebar - Navigation et Configuration
     with st.sidebar:
-        st.header("⚙️ Configuration")
-
-        # URL de l'API (hardcodée pour le déploiement ; non modifiable depuis l'UI)
-        st.markdown(f"**API URL:** {API_URL}")
-
-        # NOTE: Les vérifications de santé doivent être réalisées côté backend et dans la CI.
-        # L'application affiche les informations du modèle si l'API répond.
-
+        st.header("🔗 Navigation")
+        
+        # Liens vers les services
+        col1, col2 = st.columns(2)
+        with col1:
+            st.link_button("📊 MLflow", MLFLOW_URL, use_container_width=True)
+        with col2:
+            st.link_button("🌐 API Docs", f"{API_URL}/docs", use_container_width=True)
+        
+        # Vérifier la santé de l'API
+        st.subheader("🏥 État de l'API")
+        api_healthy = check_api_health()
+        if api_healthy:
+            st.success(f"✅ API connectée")
+            st.caption(f"🔗 {API_URL}")
+        else:
+            st.warning(f"⚠️ API indisponible")
+            st.caption(f"🔗 {API_URL}")
+            st.info("Mode local en fallback (modèle local)")
+        
+        # Vérifier MLflow
+        st.subheader("🔬 MLflow UI")
+        try:
+            mlflow_resp = requests.get(MLFLOW_URL, timeout=3)
+            if mlflow_resp.status_code == 200:
+                st.success("✅ MLflow connecté")
+            else:
+                st.warning("⚠️ MLflow indisponible")
+        except:
+            st.warning("⚠️ MLflow indisponible")
+        st.caption(f"🔗 {MLFLOW_URL}")
+        
+        st.divider()
+        
         # Informations du modèle
-        st.header("📊 Informations modèle")
+        st.header("📊 Modèle")
         model_info = get_model_info()
         if model_info:
-            st.json(model_info)
+            with st.expander("📋 Détails du modèle"):
+                st.json(model_info)
         else:
-            st.info("Informations non disponibles via l'API. L'application utilisera le modèle local si présent.")
+            st.info("Chargement des infos du modèle...")
     
-    # Contenu principal
-    tab1, tab2, tab3 = st.tabs(["📝 Saisie manuelle", "📁 Import fichier", "📖 Documentation"])
+    # Initialiser features dans session_state pour modification en temps réel
+    if 'features' not in st.session_state:
+        st.session_state.features = {}
+    
+    # Contenu principal avec 5 onglets
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "🎯 Scoring Client", 
+        "📊 Comparaison", 
+        "📁 Import / Simulation",
+        "📈 Data Drift", 
+        "📖 Documentation"
+    ])
     
     # ============================================
-    # Tab 1: Saisie manuelle
+    # Tab 1: Scoring Client - Score, probabilité, interprétation
     # ============================================
     with tab1:
-        st.header("Saisie des caractéristiques client")
+        st.header("Évaluation du risque client")
+        st.markdown("Saisissez les caractéristiques pour obtenir le score avec une interprétation détaillée.")
         
         col1, col2, col3 = st.columns(3)
         
@@ -422,16 +702,19 @@ def main():
             features["EXT_SOURCE_3"]
         ])
         
+        # Stocker features dans session_state pour comparaison
+        st.session_state.features = features.copy()
+        
         st.markdown("---")
         
-        # Boutons d'action
+        # Boutons d'action accessibles
         col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
         
         with col_btn1:
-            predict_btn = st.button("🎯 Prédire", type="primary", use_container_width=True)
+            predict_btn = st.button("🎯 Calculer le score", type="primary", use_container_width=True, help="Calculer la probabilité de défaut")
         
         with col_btn2:
-            explain_btn = st.button("🔍 Expliquer", use_container_width=True)
+            explain_btn = st.button("🔍 Expliquer le score", use_container_width=True, help="Voir les facteurs influençant le score")
         
         # Affichage des résultats
         if predict_btn:
@@ -439,44 +722,81 @@ def main():
                 result = predict(features)
             
             if result:
+                probability = result.get("probability", result.get("proba", 0.5))
+                threshold = result.get("threshold", 0.44)
+                
+                # Interprétation intelligible
+                interpretation = interpret_score(probability, threshold)
+                
                 st.markdown("---")
-                st.header("📊 Résultats")
+                st.header("📊 Résultats de l'évaluation")
                 
                 col_res1, col_res2 = st.columns([1, 1])
                 
                 with col_res1:
-                    probability = result.get("probability", result.get("proba", 0.5))
-                    threshold = result.get("threshold", 0.35)
-                    
                     # Jauge de risque
                     fig_gauge = create_gauge_chart(probability, threshold)
                     st.plotly_chart(fig_gauge, use_container_width=True)
                 
                 with col_res2:
-                    decision = result.get("decision", result.get("prediction", ""))
-                    
-                    if probability < threshold:
-                        st.success(f"""
-                        ### ✅ Crédit accordé
-                        
-                        **Probabilité de défaut**: {probability*100:.1f}%  
-                        **Seuil de décision**: {threshold*100:.1f}%
-                        
-                        Le client présente un risque acceptable.
-                        """)
+                    # Interprétation textuelle accessible
+                    if interpretation["decision"] == "ACCORDÉ":
+                        st.markdown(f"""
+                        <div class="risk-low" role="alert">
+                        <h3>✅ Crédit {interpretation['decision']}</h3>
+                        <p><strong>Probabilité de défaut:</strong> {interpretation['probability_text']}</p>
+                        <p><strong>Seuil de décision:</strong> {interpretation['threshold_text']}</p>
+                        <p><strong>Écart au seuil:</strong> -{interpretation['distance_text']}</p>
+                        <p><strong>Confiance:</strong> {interpretation['confidence']}</p>
+                        <hr>
+                        <p>{interpretation['explanation']}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
                     else:
-                        st.error(f"""
-                        ### ❌ Crédit refusé
-                        
-                        **Probabilité de défaut**: {probability*100:.1f}%  
-                        **Seuil de décision**: {threshold*100:.1f}%
-                        
-                        Le client présente un risque trop élevé.
-                        """)
-                    
-                    # Métriques supplémentaires
-                    st.metric("Probabilité de défaut", f"{probability*100:.2f}%")
-                    st.metric("Écart au seuil", f"{(probability - threshold)*100:+.2f}%")
+                        st.markdown(f"""
+                        <div class="risk-high" role="alert">
+                        <h3>❌ Crédit {interpretation['decision']}</h3>
+                        <p><strong>Probabilité de défaut:</strong> {interpretation['probability_text']}</p>
+                        <p><strong>Seuil de décision:</strong> {interpretation['threshold_text']}</p>
+                        <p><strong>Écart au seuil:</strong> +{interpretation['distance_text']}</p>
+                        <p><strong>Confiance:</strong> {interpretation['confidence']}</p>
+                        <hr>
+                        <p>{interpretation['explanation']}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                # Métriques clés
+                st.subheader("📈 Métriques clés")
+                met1, met2, met3, met4 = st.columns(4)
+                met1.metric("Probabilité", f"{probability*100:.1f}%")
+                met2.metric("Seuil", f"{threshold*100:.1f}%")
+                met3.metric("Écart", f"{(probability-threshold)*100:+.1f}%")
+                met4.metric("Décision", interpretation['decision'])
+                
+                # Informations descriptives du client
+                st.subheader("👤 Résumé du profil client")
+                
+                profile_col1, profile_col2, profile_col3 = st.columns(3)
+                
+                with profile_col1:
+                    st.markdown("**Situation financière**")
+                    st.write(f"- Revenu: {features['AMT_INCOME_TOTAL']:,.0f} €")
+                    st.write(f"- Crédit demandé: {features['AMT_CREDIT']:,.0f} €")
+                    st.write(f"- Ratio crédit/revenu: {features['CREDIT_INCOME_RATIO']:.2f}")
+                
+                with profile_col2:
+                    st.markdown("**Situation personnelle**")
+                    age_years = abs(features['DAYS_BIRTH']) // 365
+                    employed_years = abs(features['DAYS_EMPLOYED']) // 365
+                    st.write(f"- Âge: {age_years} ans")
+                    st.write(f"- Ancienneté emploi: {employed_years} ans")
+                    st.write(f"- Enfants: {features['CNT_CHILDREN']}")
+                
+                with profile_col3:
+                    st.markdown("**Scores de crédit**")
+                    st.write(f"- Score moyen: {features['EXT_SOURCE_MEAN']:.2f}")
+                    st.write(f"- Propriétaire: {'Oui' if features['FLAG_OWN_REALTY'] else 'Non'}")
+                    st.write(f"- Véhicule: {'Oui' if features['FLAG_OWN_CAR'] else 'Non'}")
         
         if explain_btn:
             with st.spinner("Calcul des explications..."):
@@ -512,14 +832,96 @@ def main():
                 if negative_features:
                     st.markdown("**Facteurs diminuant le risque:**")
                     for feat, val in negative_features[:3]:
-                        st.markdown(f"- {feat}: {val:.3f}")
+                        expl = get_feature_explanation(feat)
+                        st.markdown(f"- **{feat}** ({val:.3f}): {expl}")
     
     # ============================================
-    # Tab 2: Import fichier
+    # Tab 2: Comparaison avec la population
     # ============================================
     with tab2:
-        st.header("Import de fichier")
+        st.header("📊 Comparaison avec la population")
         
+        if reference_data is None:
+            st.warning("⚠️ Données de référence non disponibles pour la comparaison.")
+            st.info("Placez le fichier `application_train.csv` dans le dossier `data/`")
+        else:
+            st.markdown("Comparez les caractéristiques du client avec l'ensemble de la population ou un groupe de clients similaires.")
+            
+            # Sélection du groupe de comparaison
+            group_filter = st.selectbox(
+                "Groupe de comparaison",
+                ["Tous les clients", "Clients sans défaut (TARGET=0)", "Clients en défaut (TARGET=1)"],
+                help="Sélectionnez le groupe avec lequel comparer le client"
+            )
+            
+            # Features disponibles pour comparaison
+            numeric_features = ["AMT_INCOME_TOTAL", "AMT_CREDIT", "AMT_ANNUITY", "AMT_GOODS_PRICE",
+                               "EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3"]
+            available_features = [f for f in numeric_features if f in reference_data.columns]
+            
+            if st.session_state.features:
+                features = st.session_state.features
+                
+                # Graphique radar multi-critères
+                st.subheader("🎯 Vue d'ensemble - Comparaison multi-critères")
+                
+                radar_features = st.multiselect(
+                    "Caractéristiques à comparer",
+                    available_features,
+                    default=available_features[:5] if len(available_features) >= 5 else available_features,
+                    help="Choisissez jusqu'à 8 caractéristiques"
+                )
+                
+                if radar_features and len(radar_features) >= 3:
+                    fig_radar = create_radar_comparison(features, reference_data, radar_features)
+                    if fig_radar:
+                        st.plotly_chart(fig_radar, use_container_width=True)
+                else:
+                    st.info("Sélectionnez au moins 3 caractéristiques pour le graphique radar")
+                
+                st.divider()
+                
+                # Comparaison individuelle par feature
+                st.subheader("📈 Comparaison détaillée par caractéristique")
+                
+                selected_feature = st.selectbox(
+                    "Sélectionnez une caractéristique",
+                    available_features,
+                    help="Voir la distribution et la position du client"
+                )
+                
+                if selected_feature and selected_feature in features:
+                    client_value = features[selected_feature]
+                    
+                    fig_comparison = create_comparison_chart(
+                        client_value, selected_feature, reference_data, group_filter
+                    )
+                    
+                    if fig_comparison:
+                        st.plotly_chart(fig_comparison, use_container_width=True)
+                        
+                        # Statistiques textuelles
+                        ref_data = reference_data[selected_feature].dropna()
+                        percentile = (ref_data < client_value).mean() * 100
+                        
+                        st.markdown(f"""
+                        **Statistiques pour {selected_feature}:**
+                        - Valeur du client: **{client_value:,.2f}**
+                        - Moyenne population: {ref_data.mean():,.2f}
+                        - Médiane population: {ref_data.median():,.2f}
+                        - Position du client: **{percentile:.0f}e percentile**
+                        """)
+            else:
+                st.info("👆 Veuillez d'abord saisir les caractéristiques d'un client dans l'onglet 'Scoring Client'")
+    
+    # ============================================
+    # Tab 3: Import fichier / Simulation temps réel
+    # ============================================
+    with tab3:
+        st.header("📁 Import de fichier et simulation")
+        
+        # Section Import
+        st.subheader("📤 Import de fichier CSV")
         uploaded_file = st.file_uploader(
             "Choisissez un fichier CSV",
             type=["csv"],
@@ -564,19 +966,154 @@ def main():
                             )
             except Exception as e:
                 st.error(f"Erreur lors de la lecture du fichier: {e}")
+        
+        st.divider()
+        
+        # Section Simulation temps réel
+        st.subheader("🔄 Simulation interactive")
+        st.markdown("Modifiez les valeurs ci-dessous pour voir l'impact sur le score en temps réel.")
+        
+        if st.session_state.features:
+            sim_col1, sim_col2 = st.columns(2)
+            
+            with sim_col1:
+                sim_income = st.number_input(
+                    "Revenu simulé (€)",
+                    min_value=0.0,
+                    max_value=10000000.0,
+                    value=st.session_state.features.get("AMT_INCOME_TOTAL", 150000.0),
+                    step=10000.0,
+                    key="sim_income"
+                )
+                
+                sim_credit = st.number_input(
+                    "Crédit simulé (€)",
+                    min_value=0.0,
+                    max_value=5000000.0,
+                    value=st.session_state.features.get("AMT_CREDIT", 500000.0),
+                    step=50000.0,
+                    key="sim_credit"
+                )
+            
+            with sim_col2:
+                sim_ext1 = st.slider(
+                    "Score externe 1 simulé",
+                    0.0, 1.0,
+                    st.session_state.features.get("EXT_SOURCE_1", 0.5),
+                    0.01,
+                    key="sim_ext1"
+                )
+                
+                sim_ext2 = st.slider(
+                    "Score externe 2 simulé",
+                    0.0, 1.0,
+                    st.session_state.features.get("EXT_SOURCE_2", 0.6),
+                    0.01,
+                    key="sim_ext2"
+                )
+            
+            if st.button("🔄 Recalculer le score", type="primary"):
+                # Construire les features simulées
+                sim_features = st.session_state.features.copy()
+                sim_features["AMT_INCOME_TOTAL"] = sim_income
+                sim_features["AMT_CREDIT"] = sim_credit
+                sim_features["EXT_SOURCE_1"] = sim_ext1
+                sim_features["EXT_SOURCE_2"] = sim_ext2
+                
+                if sim_income > 0:
+                    sim_features["CREDIT_INCOME_RATIO"] = sim_credit / sim_income
+                
+                sim_features["EXT_SOURCE_MEAN"] = np.mean([
+                    sim_ext1, sim_ext2, sim_features.get("EXT_SOURCE_3", 0.55)
+                ])
+                
+                with st.spinner("Calcul..."):
+                    sim_result = predict(sim_features)
+                    orig_result = predict(st.session_state.features)
+                
+                if sim_result and orig_result:
+                    sim_prob = sim_result.get("probability", 0.5)
+                    orig_prob = orig_result.get("probability", 0.5)
+                    delta = sim_prob - orig_prob
+                    
+                    st.markdown("### Résultat de la simulation")
+                    
+                    res_col1, res_col2, res_col3 = st.columns(3)
+                    res_col1.metric("Score original", f"{orig_prob*100:.1f}%")
+                    res_col2.metric("Score simulé", f"{sim_prob*100:.1f}%", f"{delta*100:+.1f}%")
+                    res_col3.metric("Décision", sim_result.get("decision", "N/A").upper())
+                    
+                    if delta < 0:
+                        st.success("✅ Les modifications améliorent le profil de risque")
+                    elif delta > 0:
+                        st.warning("⚠️ Les modifications augmentent le risque")
+                    else:
+                        st.info("ℹ️ Pas de changement significatif")
+        else:
+            st.info("👆 Saisissez d'abord un client dans l'onglet 'Scoring Client'")
     
     # ============================================
-    # Tab 3: Documentation
+    # Tab 4: Data Drift
     # ============================================
-    with tab3:
-        st.header("📖 Documentation")
+    with tab4:
+        st.header("📈 Surveillance du Data Drift")
         
         st.markdown("""
+        ## Rapport Evidently
+        
+        Le rapport de data drift permet de détecter les dérives entre:
+        - **Données d'entraînement** (référence)
+        - **Données de production** (nouvelles données)
+        
+        **Métriques surveillées**:
+        - Distribution des features
+        - Valeurs manquantes
+        - Corrélations
+        - Tests statistiques (Kolmogorov-Smirnov, Chi²)
+        """)
+        
+        # Afficher le rapport HTML si disponible
+        if os.path.exists(DRIFT_REPORT_PATH):
+            with open(DRIFT_REPORT_PATH, 'r', encoding='utf-8') as f:
+                report_html = f.read()
+            
+            st.markdown("### Rapport complet Evidently")
+            st.components.v1.html(report_html, height=1200, scrolling=True)
+        else:
+            st.warning(f"⚠️ Rapport de drift non trouvé: {DRIFT_REPORT_PATH}")
+            st.info("""
+            **Pour générer le rapport**:
+            1. Exécutez le notebook `notebooks/04_Drift_Evidently.ipynb`
+            2. Le rapport sera généré dans `reports/evidently_full_report.html`
+            """)
+    
+    # ============================================
+    # Tab 5: Documentation
+    # ============================================
+    with tab5:
+        st.header("📖 Documentation")
+        
+        st.markdown(f"""
         ## À propos
         
         Cette application permet d'évaluer le risque de défaut de paiement 
         pour des demandes de crédit, en utilisant un modèle de Machine Learning
         entraîné sur les données Home Credit.
+        
+        ## Fonctionnalités
+        
+        - **Scoring Client**: Évaluation du risque avec interprétation intelligible
+        - **Comparaison**: Position du client par rapport à la population
+        - **Simulation**: Modification en temps réel des caractéristiques
+        - **Data Drift**: Surveillance de la qualité des données
+        
+        ## Accessibilité WCAG
+        
+        Cette application respecte les critères d'accessibilité **WCAG 2.1 niveau AA**:
+        - Contrastes de couleurs suffisants (ratio 4.5:1 minimum)
+        - Navigation au clavier possible
+        - Labels descriptifs pour tous les éléments interactifs
+        - Messages d'état accessibles
         
         ## Méthodologie
         
@@ -584,11 +1121,6 @@ def main():
         - **Algorithme**: LightGBM (Gradient Boosting)
         - **Métrique d'optimisation**: Coût métier (FN=10, FP=1)
         - **Seuil de décision**: Optimisé pour minimiser le coût métier
-        
-        ### Features importantes
-        - **Scores externes** (EXT_SOURCE_1, 2, 3): Scores de bureaux de crédit externes
-        - **Ratios financiers**: Crédit/Revenu, Annuité/Revenu
-        - **Ancienneté**: Emploi, Âge, Documents
         
         ### Interprétabilité
         L'explication des prédictions utilise **SHAP** (SHapley Additive exPlanations),
@@ -603,16 +1135,18 @@ def main():
         | `/predict/batch` | POST | Prédictions en batch |
         | `/predict/explain` | POST | Prédiction avec explications SHAP |
         | `/model/info` | GET | Informations sur le modèle |
-        | `/model/features` | GET | Liste des features attendues |
+        
+        ## Liens utiles
+        
+        - [Documentation API (Swagger)]({API_URL}/docs)
+        - [MLflow UI]({MLFLOW_URL})
+        - [Guide de déploiement Render](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/RENDER_SETUP.md)
         
         ## Coût métier
         
         Le modèle optimise un coût métier asymétrique:
         - **Faux Négatif (FN)**: Coût = 10 (client défaillant accepté)
         - **Faux Positif (FP)**: Coût = 1 (bon client refusé)
-        
-        Cette asymétrie reflète le fait qu'accepter un client qui fera défaut
-        est 10 fois plus coûteux que refuser un bon client.
         """)
 
 

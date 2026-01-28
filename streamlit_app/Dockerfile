@@ -16,7 +16,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
     PORT=8501 \
-    API_URL=http://localhost:8000
+    API_URL=http://localhost:8000 \
+    MLFLOW_URL=http://localhost:5002
 
 # Créer un utilisateur non-root
 RUN useradd --create-home --shell /bin/bash appuser

@@ -18,13 +18,14 @@ Commandes disponibles:
     dashboard   Lancer le dashboard Streamlit
     mlflow      Lancer l'interface MLflow UI
     test        Exécuter les tests unitaires
-    all         Lancer API + Dashboard (dev mode)
+    all         Lancer API + Dashboard + MLflow (dev mode complet)
 
 Exemples:
     python run.py train --sample 0.3
     python run.py api --port 8000
     python run.py dashboard --port 8501
     python run.py mlflow --port 5002
+    python run.py all                          # Lance tout!
 """
 
 import argparse
@@ -237,7 +238,7 @@ def run_tests(args):
 
 
 def run_all(args):
-    """Lance API + Dashboard en mode développement."""
+    """Lance API + Dashboard + MLflow en mode développement."""
     import threading
     import time
     import socket
@@ -245,7 +246,7 @@ def run_all(args):
     import urllib.error
     
     print("=" * 60)
-    print("        MODE DÉVELOPPEMENT (API + DASHBOARD)")
+    print("    MODE DÉVELOPPEMENT (API + DASHBOARD + MLFLOW)")
     print("=" * 60)
     
     if not check_environment():
@@ -254,17 +255,20 @@ def run_all(args):
     
     api_port = args.api_port or 8000
     dashboard_port = args.dashboard_port or 8501
+    mlflow_port = getattr(args, 'mlflow_port', None) or DEFAULT_MLFLOW_PORT
     wait_timeout = getattr(args, 'wait_health_timeout', 30)
     wait_interval = getattr(args, 'wait_health_interval', 1)
     ci_mode = getattr(args, 'ci', False)
     
     print(f"\n🚀 Lancement de l'API sur le port {api_port}...")
     print(f"🚀 Lancement du Dashboard sur le port {dashboard_port}...")
+    print(f"🚀 Lancement de MLflow UI sur le port {mlflow_port}...")
     print("\nCtrl+C pour arrêter tous les services\n")
     
     # Configurer l'environnement
     os.environ["PYTHONPATH"] = str(PROJECT_ROOT)
     os.environ["API_URL"] = f"http://localhost:{api_port}"
+    os.environ["MLFLOW_URL"] = f"http://localhost:{mlflow_port}"
     
     # Lancer l'API en arrière-plan
     api_cmd = [
@@ -298,8 +302,24 @@ def run_all(args):
 
     # En mode CI, on s'arrête après vérification de l'API pour laisser le job CI lancer les étapes suivantes
     if ci_mode:
-        print("Mode CI activé: l'API est lancée et répond (ou le timeout est atteint). Fin du processus.`")
+        print("Mode CI activé: l'API est lancée et répond (ou le timeout est atteint). Fin du processus.")
         return 0
+    
+    # Déterminer le répertoire MLflow
+    tracking_uri = PROJECT_ROOT / "notebooks" / "mlruns"
+    if not tracking_uri.exists():
+        tracking_uri = PROJECT_ROOT / "mlruns"
+    
+    # Lancer MLflow UI
+    mlflow_cmd = [
+        sys.executable, "-m", "mlflow", "ui",
+        "--backend-store-uri", f"file://{tracking_uri}",
+        "--port", str(mlflow_port),
+        "--host", "127.0.0.1"
+    ]
+    
+    mlflow_process = subprocess.Popen(mlflow_cmd, cwd=PROJECT_ROOT)
+    print(f"✅ MLflow UI lancé sur http://localhost:{mlflow_port}")
     
     # Lancer le dashboard
     dashboard_cmd = [
@@ -312,12 +332,21 @@ def run_all(args):
     
     try:
         dashboard_process = subprocess.Popen(dashboard_cmd, cwd=PROJECT_ROOT)
+        print(f"✅ Dashboard lancé sur http://localhost:{dashboard_port}")
+        print(f"\n📊 Services disponibles:")
+        print(f"   - API: http://localhost:{api_port}")
+        print(f"   - Dashboard: http://localhost:{dashboard_port}")
+        print(f"   - MLflow: http://localhost:{mlflow_port}")
+        print(f"   - API Docs: http://localhost:{api_port}/docs")
         api_process.wait()
-        dashboard_process.wait()
     except KeyboardInterrupt:
         print("\n\n🛑 Arrêt des services...")
         api_process.terminate()
+        mlflow_process.terminate()
         dashboard_process.terminate()
+        api_process.wait()
+        mlflow_process.wait()
+        dashboard_process.wait()
     
     return 0
 
@@ -335,7 +364,10 @@ Exemples d'utilisation:
   python run.py dashboard                # Lancer le dashboard sur le port {DEFAULT_DASHBOARD_PORT}
   python run.py mlflow                   # Lancer MLflow UI sur le port {DEFAULT_MLFLOW_PORT}
   python run.py test                     # Exécuter les tests
-  python run.py all                      # Lancer API + Dashboard
+  python run.py all                      # Lancer API + Dashboard + MLflow (complet!)
+  
+  python run.py all --api-port 9000 --dashboard-port 9501 --mlflow-port 9002
+                                         # Lancer sur des ports personnalisés
         """
     )
     
@@ -369,9 +401,10 @@ Exemples d'utilisation:
     test_parser.add_argument("--coverage", action="store_true", help="Avec couverture de code")
     
     # Commande all
-    all_parser = subparsers.add_parser("all", help="Lancer API + Dashboard")
+    all_parser = subparsers.add_parser("all", help="Lancer API + Dashboard + MLflow")
     all_parser.add_argument("--api-port", type=int, default=DEFAULT_API_PORT, help=f"Port API (défaut: {DEFAULT_API_PORT})")
     all_parser.add_argument("--dashboard-port", type=int, default=DEFAULT_DASHBOARD_PORT, help=f"Port Dashboard (défaut: {DEFAULT_DASHBOARD_PORT})")
+    all_parser.add_argument("--mlflow-port", type=int, default=DEFAULT_MLFLOW_PORT, help=f"Port MLflow (défaut: {DEFAULT_MLFLOW_PORT})")
     
     args = parser.parse_args()
     

@@ -1,7 +1,7 @@
 # 🏦 Home Credit Scoring - Projet MLOps Complet
 
-[![CI - Tests & Linting](https://github.com/username/home-credit-scoring/actions/workflows/ci.yml/badge.svg)](https://github.com/username/home-credit-scoring/actions/workflows/ci.yml)
-[![CD - Deploy](https://github.com/username/home-credit-scoring/actions/workflows/deploy.yml/badge.svg)](https://github.com/username/home-credit-scoring/actions/workflows/deploy.yml)
+[![CI - Tests & Linting](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/actions/workflows/ci.yml/badge.svg)](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/actions/workflows/ci.yml)
+[![CD - Deploy](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/actions/workflows/deploy.yml/badge.svg)](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/actions/workflows/deploy.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -14,6 +14,14 @@ Projet complet de **scoring de crédit** basé sur le dataset [Home Credit Defau
 Prédire la **probabilité de défaut de paiement** d'un client demandant un crédit, en optimisant le coût métier avec :
 - **Coût d'un Faux Négatif (FN)** : 10 (accepter un client qui fera défaut)
 - **Coût d'un Faux Positif (FP)** : 1 (refuser un bon client)
+
+## 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| [README.md](README.md) | Ce fichier - Vue d'ensemble du projet |
+| [RENDER_SETUP.md](RENDER_SETUP.md) | Guide complet de déploiement sur Render (API, Dashboard, MLflow) |
+| [tests/README.md](tests/README.md) | Documentation des tests unitaires et d'intégration |
 
 ## 🏗️ Architecture du projet
 
@@ -128,15 +136,40 @@ python run.py mlflow     # MLflow UI sur http://localhost:5002
 
 ### Lancer avec Docker
 
+Le projet utilise **3 Dockerfiles distincts** pour chaque service :
+
+#### 1. API (api/Dockerfile)
 ```bash
-# Build et run API
 docker build -t home-credit-api -f api/Dockerfile .
 docker run -p 8000:8000 home-credit-api
-
-# Build et run Dashboard
-docker build -t home-credit-dashboard -f streamlit_app/Dockerfile .
-docker run -p 8501:8501 -e API_URL=http://host.docker.internal:8000 home-credit-dashboard
 ```
+- **Port** : 8000
+- **Base** : python:3.10-slim
+- **Contient** : Modèle LightGBM, preprocessor, code API FastAPI
+
+#### 2. Dashboard (streamlit_app/Dockerfile)
+```bash
+docker build -t home-credit-dashboard -f streamlit_app/Dockerfile .
+docker run -p 8501:8501 \
+  -e API_URL=https://votre-api.onrender.com \
+  -e MLFLOW_URL=https://votre-mlflow.onrender.com \
+  home-credit-dashboard
+```
+- **Port** : 8501
+- **Base** : python:3.10-slim
+- **Variables obligatoires** : `API_URL` (API FastAPI), `MLFLOW_URL` (Interface MLflow)
+- **Contient** : Application Streamlit avec 5 onglets (Scoring, Comparaison, Import/Simulation, Drift, Documentation)
+
+#### 3. MLflow (mlflow/Dockerfile)
+```bash
+docker build -t home-credit-mlflow -f mlflow/Dockerfile .
+docker run -p 5000:5000 home-credit-mlflow
+```
+- **Port** : 5000
+- **Base** : python:3.10-slim
+- **Contient** : MLflow UI avec les runs d'expérimentation (mlruns/)
+
+> 📝 **Note** : Les données du dossier `data/` ne sont pas incluses dans les images Docker pour réduire la taille. Seuls les modèles pré-entraînés sont embarqués.
 
 ## 📊 Résultats du modèle
 
@@ -189,10 +222,15 @@ docker run -p 8501:8501 -e API_URL=http://host.docker.internal:8000 home-credit-
 
 ### 6. 🔄 CI/CD
 
-- Tests automatisés sur chaque PR
+- Tests automatisés sur chaque PR (**les tests doivent passer avant le déploiement**)
 - Linting et formatage du code
 - Build Docker automatique
-- Déploiement sur Render/Railway
+- Push des images vers GitHub Container Registry (GHCR)
+- Déploiement automatique sur Render
+
+> ⚠️ **Important** : Le déploiement ne s'exécute que si tous les tests CI réussissent.
+
+Pour le guide complet de déploiement, consultez [RENDER_SETUP.md](RENDER_SETUP.md).
 
 ## 📁 Données
 
@@ -285,7 +323,8 @@ Pour activer le déploiement automatique, configurez ces secrets dans GitHub :
 |--------|-------------|
 | `RENDER_API_KEY` | Clé API Render (Account Settings → API Keys) |
 | `RENDER_API_SERVICE_ID` | ID du service API (visible dans l'URL Render) |
-| `RENDER_DASHBOARD_SERVICE_ID` | ID du service Dashboard |
+| `RENDER_DASHBOARD_SERVICE_ID` | ID du service Dashboard (visible dans l'URL Render) |
+| `RENDER_MLFLOW_SERVICE_ID` | ID du service MLflow (visible dans l'URL Render) |
 
 ### Variables d'environnement
 

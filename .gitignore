@@ -74,7 +74,8 @@ data/processed/
 # ============================================
 # Modeles (VOLUMINEUX - ne pas versionner)
 # ============================================
-models/*.joblib
+# Modèles maintenant inclus pour le déploiement
+# models/*.joblib
 models/*.pkl
 models/*.pickle
 models/*.h5
@@ -152,6 +153,7 @@ credentials.json
 kaggle.json
 secrets/
 .secrets/
+render-key.txt
 
 # ============================================
 # Docker

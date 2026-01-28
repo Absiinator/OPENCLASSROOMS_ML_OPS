@@ -576,8 +576,23 @@ async def data_describe(source: Optional[str] = None):
 
         # Calculer stats
         desc = df.describe(include='all').to_dict()
-        missing = df.isna().sum().to_dict()
-        target_counts = df['TARGET'].value_counts().to_dict() if 'TARGET' in df.columns else {}
+        
+        # Nettoyer les valeurs NaN/Inf pour JSON
+        def clean_json_values(obj):
+            """Convertit NaN et Inf en None pour éviter les erreurs JSON."""
+            if isinstance(obj, dict):
+                return {k: clean_json_values(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [clean_json_values(v) for v in obj]
+            elif isinstance(obj, float):
+                if np.isnan(obj) or np.isinf(obj):
+                    return None
+                return obj
+            return obj
+        
+        desc = clean_json_values(desc)
+        missing = clean_json_values(df.isna().sum().to_dict())
+        target_counts = clean_json_values(df['TARGET'].value_counts().to_dict()) if 'TARGET' in df.columns else {}
 
         return {
             "n_rows": len(df),
