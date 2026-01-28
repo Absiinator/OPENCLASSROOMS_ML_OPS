@@ -254,7 +254,7 @@ jobs:
   deploy-dashboard:
     name: 🚀 Deploy Dashboard (Render)
     runs-on: ubuntu-latest
-    needs: [build-dashboard, deploy-api]
+    needs: [build-dashboard, deploy-api, deploy-mlflow]
     environment:
       name: production-dashboard
       url: ${{ steps.deploy.outputs.url }}
@@ -272,6 +272,7 @@ jobs:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_DASHBOARD: ${{ secrets.RENDER_SERVICE_DASHBOARD }}
           API_URL: ${{ needs.deploy-api.outputs.url }}
+          MLFLOW_URL: ${{ needs.deploy-mlflow.outputs.url }}
         run: |
           if [ -n "$RENDER_API_KEY" ] && [ -n "$RENDER_SERVICE_DASHBOARD" ]; then
             # Déclencher le déploiement avec l'URL de l'API en variable d'environnement
@@ -297,6 +298,7 @@ jobs:
             echo "url=https://${SERVICE_URL}" >> $GITHUB_OUTPUT
             echo "✅ Déploiement Dashboard déclenché: https://${SERVICE_URL}"
             echo "🔗 API URL passée au Dashboard: ${API_URL}"
+            echo "🔬 MLflow URL passée au Dashboard: ${MLFLOW_URL}"
           else
             echo "⚠️ Secrets Render non configurés - Déploiement simulé"
             echo "url=https://home-credit-dashboard.onrender.com" >> $GITHUB_OUTPUT
