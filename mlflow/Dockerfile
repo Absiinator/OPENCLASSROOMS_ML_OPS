@@ -15,11 +15,10 @@ RUN pip install --no-cache-dir \
     boto3 \
     psycopg2-binary
 
-# Créer le répertoire pour les artefacts
+# Créer le répertoire pour les artefacts MLflow
+# Note: En production (Render), mlruns/ sera vide au démarrage car non persistant.
+# Les expériences doivent être loggées depuis les scripts d'entraînement vers ce serveur.
 RUN mkdir -p /app/mlruns
-
-# Copier les runs MLflow locaux (optionnel)
-COPY mlruns/ /app/mlruns/
 
 # Exposer le port
 EXPOSE ${PORT}
