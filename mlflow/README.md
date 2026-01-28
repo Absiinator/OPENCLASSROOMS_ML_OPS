@@ -61,6 +61,7 @@ Voir [requirements.txt](requirements.txt) :
 
 ## 📝 Notes
 
-- Les données sont persistées dans le conteneur (`/app/mlruns`)
+- Les runs MLflow du dossier `mlruns/` local sont copiés dans l'image Docker lors du build
 - **Tier gratuit Render** : 512MB RAM, service arrêté après 15 min d'inactivité
 - **Optimisations appliquées** : 1 worker, timeout 120s, dépendances minimales
+- Les runs sont accessibles en **lecture seule** - les nouvelles expériences ne seront pas persistées (tier gratuit)

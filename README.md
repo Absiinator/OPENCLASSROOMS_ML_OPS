@@ -167,11 +167,11 @@ docker run -p 5000:5000 home-credit-mlflow
 ```
 - **Port** : 5000
 - **Base** : python:3.10-slim
-- **Contient** : MLflow UI (répertoire `mlruns/` vide au démarrage)
+- **Contient** : MLflow UI avec les runs d'expérimentation (mlruns/ copié lors du build)
 
 > 📝 **Notes** : 
 > - Les données du dossier `data/` ne sont pas incluses dans les images Docker pour réduire la taille. Seuls les modèles pré-entraînés sont embarqués.
-> - **MLflow** : Le stockage n'est pas persistant sur Render. L'interface sert à visualiser les expériences locales. Pour persister en production, un backend externe (S3) est nécessaire.
+> - **MLflow** : Les runs existants dans `mlruns/` sont copiés dans l'image Docker et accessibles en lecture seule sur Render. Nouvelles expériences non persistantes (tier gratuit).
 
 ## 📊 Résultats du modèle
 

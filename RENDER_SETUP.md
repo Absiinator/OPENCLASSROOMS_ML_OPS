@@ -36,7 +36,7 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
 ### MLflow (`mlflow/Dockerfile`)
 - **Base** : `python:3.10-slim`
 - **Port** : 5000
-- **Contenu** : Répertoire `mlruns/` vide au démarrage (non persistant sur Render)
+- **Contenu** : Répertoire `mlruns/` copié depuis le projet local lors du build
 - **Variables d'env par défaut** :
   - `PORT=5000`
 - **Commande** : `mlflow server --host 0.0.0.0 --port $PORT`
@@ -44,7 +44,7 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
 ⚠️ **Notes importantes** : 
 - Les données volumineuses (`data/`) ne sont **PAS** incluses dans les images Docker
 - Le Dashboard gère gracieusement leur absence (feature de comparaison désactivée)
-- **MLflow** : Le dossier `mlruns/` est vide au démarrage sur Render (stockage non persistant). Utilisez cette interface pour visualiser les runs historiques locaux uniquement. Pour persister les expériences en production, configurez un backend S3 (option payante non couverte ici).
+- **MLflow** : Les runs du dossier `mlruns/` local sont copiés dans l'image Docker lors du build GitHub Actions. Ils sont accessibles en lecture seule sur Render. Pour persister de nouvelles expériences en production, un backend S3 serait nécessaire (option payante non couverte).
 ### Résumé des variables d'environnement par service
 
 | Service | Variable | Valeur par défaut | À configurer sur Render |

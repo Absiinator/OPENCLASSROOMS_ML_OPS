@@ -23,9 +23,11 @@ WORKDIR /app
 RUN pip install --no-cache-dir mlflow==2.9.2
 
 # Créer le répertoire pour les artefacts MLflow
-# Note: En production (Render), mlruns/ sera vide au démarrage car non persistant.
-# Les expériences doivent être loggées depuis les scripts d'entraînement vers ce serveur.
 RUN mkdir -p /app/mlruns
+
+# Copier les runs MLflow existants depuis la racine du projet
+# Le contexte de build est à la racine (.) donc mlruns/ est accessible
+COPY mlruns/ /app/mlruns/
 
 # Exposer le port
 EXPOSE ${PORT}

@@ -89,7 +89,8 @@ models/*.pth
 # ============================================
 # MLflow (tracking local)
 # ============================================
-mlruns/
+# Exception: inclure mlruns/ pour le déploiement Docker
+!mlruns/
 mlartifacts/
 notebooks/mlruns/
 
