@@ -218,18 +218,18 @@ jobs:
         id: deploy
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_API_SERVICE_ID: ${{ secrets.RENDER_API_SERVICE_ID }}
+          RENDER_SERVICE_API: ${{ secrets.RENDER_SERVICE_API }}
         run: |
-          if [ -n "$RENDER_API_KEY" ] && [ -n "$RENDER_API_SERVICE_ID" ]; then
+          if [ -n "$RENDER_API_KEY" ] && [ -n "$RENDER_SERVICE_API" ]; then
             # Déclencher le déploiement
-            curl -s -X POST "https://api.render.com/v1/services/${RENDER_API_SERVICE_ID}/deploys" \
+            curl -s -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_API}/deploys"
               -H "Authorization: Bearer ${RENDER_API_KEY}" \
               -H "Content-Type: application/json" \
               -d '{"clearCache": false}' || true
             
             # Attendre et récupérer les infos du service
             sleep 5
-            SERVICE_JSON=$(curl -s -X GET "https://api.render.com/v1/services/${RENDER_API_SERVICE_ID}" \
+            SERVICE_JSON=$(curl -s -X GET "https://api.render.com/v1/services/${RENDER_SERVICE_API}" \
               -H "Authorization: Bearer ${RENDER_API_KEY}" \
               -H "Content-Type: application/json")
             
@@ -270,19 +270,19 @@ jobs:
         id: deploy
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_DASHBOARD_SERVICE_ID: ${{ secrets.RENDER_DASHBOARD_SERVICE_ID }}
+          RENDER_SERVICE_DASHBOARD: ${{ secrets.RENDER_SERVICE_DASHBOARD }}
           API_URL: ${{ needs.deploy-api.outputs.url }}
         run: |
-          if [ -n "$RENDER_API_KEY" ] && [ -n "$RENDER_DASHBOARD_SERVICE_ID" ]; then
+          if [ -n "$RENDER_API_KEY" ] && [ -n "$RENDER_SERVICE_DASHBOARD" ]; then
             # Déclencher le déploiement avec l'URL de l'API en variable d'environnement
-            curl -X POST "https://api.render.com/v1/services/${RENDER_DASHBOARD_SERVICE_ID}/deploys" \
+            curl -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_DASHBOARD}/deploys" \
               -H "Authorization: Bearer ${RENDER_API_KEY}" \
               -H "Content-Type: application/json" \
               -d '{"clearCache": false}'
             
             # Attendre et récupérer les infos du service
             sleep 5
-            SERVICE_JSON=$(curl -s -X GET "https://api.render.com/v1/services/${RENDER_DASHBOARD_SERVICE_ID}" \
+            SERVICE_JSON=$(curl -s -X GET "https://api.render.com/v1/services/${RENDER_SERVICE_DASHBOARD}" \
               -H "Authorization: Bearer ${RENDER_API_KEY}" \
               -H "Content-Type: application/json")
             
@@ -324,18 +324,18 @@ jobs:
         id: deploy
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_MLFLOW_SERVICE_ID: ${{ secrets.RENDER_MLFLOW_SERVICE_ID }}
+          RENDER_SERVICE_MLFLOW: ${{ secrets.RENDER_SERVICE_MLFLOW }}
         run: |
-          if [ -n "$RENDER_API_KEY" ] && [ -n "$RENDER_MLFLOW_SERVICE_ID" ]; then
+          if [ -n "$RENDER_API_KEY" ] && [ -n "$RENDER_SERVICE_MLFLOW" ]; then
             # Déclencher le déploiement
-            curl -X POST "https://api.render.com/v1/services/${RENDER_MLFLOW_SERVICE_ID}/deploys" \
+            curl -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_MLFLOW}/deploys" \
               -H "Authorization: Bearer ${RENDER_API_KEY}" \
               -H "Content-Type: application/json" \
               -d '{"clearCache": false}'
             
             # Attendre et récupérer les infos du service
             sleep 5
-            SERVICE_JSON=$(curl -s -X GET "https://api.render.com/v1/services/${RENDER_MLFLOW_SERVICE_ID}" \
+            SERVICE_JSON=$(curl -s -X GET "https://api.render.com/v1/services/${RENDER_SERVICE_MLFLOW}" \
               -H "Authorization: Bearer ${RENDER_API_KEY}" \
               -H "Content-Type: application/json")
             

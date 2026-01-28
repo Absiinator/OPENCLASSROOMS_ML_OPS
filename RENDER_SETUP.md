@@ -163,8 +163,14 @@ ghcr.io/absiinator/openclassrooms-ml-ops-mlflow:latest
 |-----------|--------|
 | **Name** | `home-credit-mlflow` |
 | **Region** | Europe (Frankfurt) |
-| **Instance Type** | Free |
+| **Instance Type** | Free (512MB RAM) |
 | **Port** | 5000 (ou `$PORT`) |
+
+⚠️ **Important - Optimisations appliquées** :
+- Le Dockerfile est configuré avec **1 worker** au lieu de 4 par défaut
+- Timeout augmenté à **120 secondes** pour éviter les crashs
+- Dépendances minimales (pas de boto3/psycopg2) pour économiser la RAM
+- Si vous voyez des erreurs "WORKER TIMEOUT" au démarrage, c'est normal - attendez 1-2 minutes que le service se stabilise
 
 ### 2b.3 Récupérer le Service ID MLflow
 
@@ -193,18 +199,18 @@ MLFLOW_URL=https://home-credit-mlflow.onrender.com
 | Nom | Valeur | Description |
 |-----|--------|-------------|
 | `RENDER_API_KEY` | Votre clé API Render | Clé copiée à l'étape 1.4 |
-| `RENDER_API_SERVICE_ID` | `srv-xxxxxxxxxxxxx` | Service ID de l'API (étape 1.5) |
-| `RENDER_DASHBOARD_SERVICE_ID` | `srv-xxxxxxxxxxxxx` | Service ID du Dashboard (étape 2.3) |
-| `RENDER_MLFLOW_SERVICE_ID` | `srv-xxxxxxxxxxxxx` | Service ID de MLflow (étape 2b.4) |
+| `RENDER_SERVICE_API` | `srv-xxxxxxxxxxxxx` | Service ID de l'API (étape 1.5) |
+| `RENDER_SERVICE_DASHBOARD` | `srv-xxxxxxxxxxxxx` | Service ID du Dashboard (étape 2.3) |
+| `RENDER_SERVICE_MLFLOW` | `srv-xxxxxxxxxxxxx` | Service ID de MLflow (étape 2b.4) |
 
 ### 3.2 Vérifier les secrets
 
 Dans **Settings → Secrets → Actions**, vous devriez voir :
 ```
 RENDER_API_KEY
-RENDER_API_SERVICE_ID
-RENDER_DASHBOARD_SERVICE_ID
-RENDER_MLFLOW_SERVICE_ID
+RENDER_SERVICE_API
+RENDER_SERVICE_DASHBOARD
+RENDER_SERVICE_MLFLOW
 ```
 
 ## ✅ Étape 4 : Tester le Déploiement
@@ -321,6 +327,12 @@ graph LR
 - Normal si les modèles ne sont pas inclus dans l'image Docker
 - Le Dashboard utilise automatiquement le fallback local si l'API ne répond pas
 
+**Problème : MLflow - "WORKER TIMEOUT" ou "Out of memory"**
+- **Normal au premier démarrage** - Attendez 1-2 minutes que le service se stabilise
+- Le tier gratuit a 512MB RAM - MLflow est configuré avec 1 worker pour économiser la mémoire
+- Si les erreurs persistent après 2 minutes, le service devrait fonctionner normalement
+- Les workers qui crashent sont automatiquement redémarrés par Gunicorn
+
 ---
 
 ## ✅ Checklist Finale
@@ -331,7 +343,7 @@ graph LR
 - [ ] Web Service MLflow créé
 - [ ] API Key Render générée
 - [ ] Service IDs copiés (API, Dashboard, MLflow)
-- [ ] Secrets GitHub configurés (`RENDER_API_KEY`, `RENDER_API_SERVICE_ID`, `RENDER_DASHBOARD_SERVICE_ID`, `RENDER_MLFLOW_SERVICE_ID`)
+- [ ] Secrets GitHub configurés (`RENDER_API_KEY`, `RENDER_SERVICE_API`, `RENDER_SERVICE_DASHBOARD`, `RENDER_SERVICE_MLFLOW`)
 - [ ] Variables d'env configurées sur chaque service Render
 - [ ] Variables GitHub configurées (URLs de déploiement - optionnel)
 - [ ] Premier déploiement manuel réussi

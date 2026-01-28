@@ -324,9 +324,9 @@ Pour activer le déploiement automatique, configurez ces secrets dans GitHub :
 | Secret | Description |
 |--------|-------------|
 | `RENDER_API_KEY` | Clé API Render (Account Settings → API Keys) |
-| `RENDER_API_SERVICE_ID` | ID du service API (visible dans l'URL Render) |
-| `RENDER_DASHBOARD_SERVICE_ID` | ID du service Dashboard (visible dans l'URL Render) |
-| `RENDER_MLFLOW_SERVICE_ID` | ID du service MLflow (visible dans l'URL Render) |
+| `RENDER_SERVICE_API` | ID du service API (visible dans l'URL Render) |
+| `RENDER_SERVICE_DASHBOARD` | ID du service Dashboard (visible dans l'URL Render) |
+| `RENDER_SERVICE_MLFLOW` | ID du service MLflow (visible dans l'URL Render) |
 
 ### Variables d'environnement
 

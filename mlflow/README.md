@@ -40,6 +40,11 @@ Variables d'environnement :
 - `MLFLOW_TRACKING_URI` : Backend store (`/app/mlruns`)
 - `MLFLOW_BACKEND_STORE_URI` : Alias du tracking URI
 
+**Configuration Render (tier gratuit)** :
+- 1 worker (au lieu de 4) pour économiser la RAM (512MB disponibles)
+- Timeout augmenté à 120s pour éviter les WORKER TIMEOUT
+- Dépendances minimales (pas de boto3/psycopg2)
+
 ## 🔍 Fonctionnalités
 
 L'interface MLflow UI permet de :
@@ -52,9 +57,10 @@ L'interface MLflow UI permet de :
 ## 🛠️ Dépendances
 
 Voir [requirements.txt](requirements.txt) :
-- `mlflow==2.9.2` : Framework MLflow
+- `mlflow==2.9.2` : Framework MLflow (version légère, sans boto3/psycopg2 pour économiser la RAM)
 
 ## 📝 Notes
 
 - Les données sont persistées dans le conteneur (`/app/mlruns`)
-- Le plan gratuit Render arrête les services après 15 min d'inactivité
+- **Tier gratuit Render** : 512MB RAM, service arrêté après 15 min d'inactivité
+- **Optimisations appliquées** : 1 worker, timeout 120s, dépendances minimales
