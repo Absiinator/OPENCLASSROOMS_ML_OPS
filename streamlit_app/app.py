@@ -123,9 +123,9 @@ def get_model_info() -> Optional[Dict[str, Any]]:
 
 
 def get_model_features() -> Optional[list]:
-    """Récupère la liste des features du modèle."""
+    """Récupère la liste des noms des features du modèle."""
     try:
-        response = requests.get(f"{API_URL}/model/features", timeout=10)
+        response = requests.get(f"{API_URL}/model/feature-names", timeout=10)
         if response.status_code == 200:
             return response.json().get("features", [])
     except:

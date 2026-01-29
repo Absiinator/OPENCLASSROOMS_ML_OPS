@@ -1,0 +1,10 @@
+artifact_location: /Users/jeffreylepage/Desktop/OPENCLASSROOMS/Lepage_Jeffrey_Réalisez_un_dashboard_et_assurez_une_veille_technique/home-credit-scoring/notebooks/mlruns/446811177754564983/models/m-a4679c923b1d4c10a48366e3710aabf5/artifacts
+creation_timestamp: 1765473064061
+experiment_id: '446811177754564983'
+last_updated_timestamp: 1765473067275
+model_id: m-a4679c923b1d4c10a48366e3710aabf5
+model_type: null
+name: model
+source_run_id: 169b2338d7224da2801ea8dda14d64e3
+status: 2
+status_message: null

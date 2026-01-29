@@ -1,0 +1,15 @@
+creation_timestamp: 1765473067297
+current_stage: None
+deployment_job_state: null
+description: null
+last_updated_timestamp: 1765473067297
+model_id: m-a4679c923b1d4c10a48366e3710aabf5
+name: home_credit_model
+run_id: 169b2338d7224da2801ea8dda14d64e3
+run_link: null
+source: models:/m-a4679c923b1d4c10a48366e3710aabf5
+status: READY
+status_message: null
+storage_location: /Users/jeffreylepage/Desktop/OPENCLASSROOMS/Lepage_Jeffrey_Réalisez_un_dashboard_et_assurez_une_veille_technique/home-credit-scoring/notebooks/mlruns/446811177754564983/models/m-a4679c923b1d4c10a48366e3710aabf5/artifacts
+user_id: null
+version: 2

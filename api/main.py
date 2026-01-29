@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from api.models import (
     ClientFeatures,
+    PredictionRequest,
     PredictionResponse,
     BatchPredictionRequest,
     BatchPredictionResponse,
@@ -224,7 +225,7 @@ async def model_info_endpoint(info: dict = Depends(get_model_info)):
 
 @app.post("/predict", response_model=PredictionResponse, tags=["Prediction"])
 async def predict(
-    payload: Dict[str, Any] = Body(...),
+    request: PredictionRequest,
     threshold: Optional[float] = Query(None, ge=0, le=1, description="Seuil personnalisé"),
     model_dep = Depends(get_model),
     preprocessor_dep = Depends(get_preprocessor)
@@ -232,9 +233,7 @@ async def predict(
     """
     Prédit la probabilité de défaut pour un client.
     
-    Accepte soit:
-    - `{"features": {...}}` (wrapper)
-    - `{...}` (direct features)
+    Accepte: `{"features": {...}}`
     
     Retourne la probabilité, la décision et la catégorie de risque.
     """
@@ -245,11 +244,8 @@ async def predict(
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        # Handle both formats: {"features": {...}} or direct {...}
-        if isinstance(payload, dict) and 'features' in payload and not 'AMT_INCOME_TOTAL' in payload:
-            client_dict = payload['features']
-        else:
-            client_dict = payload
+        # Extraire les features du request
+        client_dict = request.features
 
         # Vérifier que le payload contient des données
         if not isinstance(client_dict, dict) or not client_dict:
@@ -292,7 +288,7 @@ async def predict(
 
 @app.post("/predict/batch", response_model=BatchPredictionResponse, tags=["Prediction"])
 async def predict_batch(
-    request: Dict[str, Any] = Body(...),
+    request: BatchPredictionRequest,
     model_dep = Depends(get_model),
     preprocessor_dep = Depends(get_preprocessor)
 ):
@@ -310,11 +306,8 @@ async def predict_batch(
     if used_model is None:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
-    clients_list = []
-    if isinstance(request, dict) and 'clients' in request:
-        clients_list = request['clients']
-    else:
-        clients_list = request.get('clients', []) if isinstance(request, dict) else []
+    # Utiliser directement les attributs du modèle Pydantic
+    clients_list = request.clients
 
     if len(clients_list) == 0:
         raise HTTPException(status_code=400, detail="Liste de clients vide")
@@ -322,18 +315,15 @@ async def predict_batch(
         raise HTTPException(status_code=400, detail="Maximum 1000 clients par requête")
     
     try:
-        # Convertir en DataFrame
+        # Convertir en DataFrame - les clients sont des ClientFeatures Pydantic
         clients_data = []
         for c in clients_list:
-            if isinstance(c, dict) and 'features' in c:
-                clients_data.append(c['features'])
-            elif isinstance(c, dict):
-                clients_data.append(c)
-            else:
-                # try pydantic model dump
-                try:
-                    clients_data.append(c.model_dump(exclude_none=True))
-                except Exception:
+            try:
+                clients_data.append(c.model_dump(exclude_none=True))
+            except Exception:
+                if isinstance(c, dict):
+                    clients_data.append(c)
+                else:
                     clients_data.append({})
 
         df = pd.DataFrame(clients_data)
@@ -347,9 +337,9 @@ async def predict_batch(
         # Prédictions
         probabilities = used_model.predict_proba(X)[:, 1]
         
-        # Seuil
-        if request.get('threshold') is not None:
-            used_threshold = request['threshold']
+        # Seuil - utiliser l'attribut Pydantic
+        if request.threshold is not None:
+            used_threshold = request.threshold
         elif config is not None:
             used_threshold = config.get("optimal_threshold", 0.5)
         else:
@@ -386,7 +376,7 @@ async def predict_batch(
 
 @app.post("/predict/explain", response_model=ExplanationResponse, tags=["Explanation"])
 async def explain_prediction(
-    payload: Dict[str, Any] = Body(...),
+    request: PredictionRequest,
     model_dep = Depends(get_model),
     preprocessor_dep = Depends(get_preprocessor),
     explainer_dep = Depends(get_explainer)
@@ -405,11 +395,8 @@ async def explain_prediction(
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        # Handle both formats: {"features": {...}} or direct {...}
-        if isinstance(payload, dict) and 'features' in payload and not 'AMT_INCOME_TOTAL' in payload:
-            client_dict = payload['features']
-        else:
-            client_dict = payload
+        # Extraire les features
+        client_dict = request.features
 
         df = pd.DataFrame([client_dict])
         
@@ -512,6 +499,31 @@ async def get_feature_importance(top_n: int = Query(20, ge=1, le=100), model_dep
             ))
         
         return result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur: {str(e)}")
+
+
+@app.get("/model/feature-names", tags=["Model"])
+async def get_feature_names(model_dep = Depends(get_model), preprocessor_dep = Depends(get_preprocessor)):
+    """
+    Obtenir la liste des noms des features utilisées par le modèle.
+    
+    Retourne: {"features": ["feature1", "feature2", ...]}
+    """
+    used_model = model_dep or model
+    used_preprocessor = preprocessor_dep or preprocessor
+
+    if used_model is None:
+        raise HTTPException(status_code=503, detail="Modèle non chargé")
+    
+    try:
+        feature_names = getattr(used_preprocessor, 'feature_names', None) or getattr(used_model, 'feature_names_', None) or getattr(used_model, 'feature_names', None)
+        
+        if feature_names is None:
+            raise HTTPException(status_code=500, detail="Feature names indisponibles")
+        
+        return {"features": list(feature_names)}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur: {str(e)}")

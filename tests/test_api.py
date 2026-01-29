@@ -168,8 +168,8 @@ class TestBatchPredictEndpoint:
         """Test de prédiction en batch."""
         payload = {
             "clients": [
-                {"features": {"feature1": 1.0, "feature2": 2.0, "feature3": 3.0}},
-                {"features": {"feature1": 4.0, "feature2": 5.0, "feature3": 6.0}}
+                {"feature1": 1.0, "feature2": 2.0, "feature3": 3.0},
+                {"feature1": 4.0, "feature2": 5.0, "feature3": 6.0}
             ]
         }
         

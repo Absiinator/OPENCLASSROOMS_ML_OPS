@@ -1,0 +1,14 @@
+artifact_uri: /Users/jeffreylepage/Desktop/OPENCLASSROOMS/Lepage_Jeffrey_Réalisez_un_dashboard_et_assurez_une_veille_technique/home-credit-scoring/notebooks/mlruns/446811177754564983/169b2338d7224da2801ea8dda14d64e3/artifacts
+end_time: 1765473067330
+entry_point_name: ''
+experiment_id: '446811177754564983'
+lifecycle_stage: active
+run_id: 169b2338d7224da2801ea8dda14d64e3
+run_name: lgbm_training_notebook
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1765473057846
+status: 3
+tags: []
+user_id: jeffreylepage

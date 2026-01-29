@@ -25,6 +25,25 @@ class Decision(str, Enum):
     REFUSED = "REFUSÉ"
 
 
+class PredictionRequest(BaseModel):
+    """Requête de prédiction simple avec features en dictionnaire."""
+    features: Dict[str, Any] = Field(..., description="Dictionnaire des features du client")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "features": {
+                    "AMT_INCOME_TOTAL": 150000.0,
+                    "AMT_CREDIT": 500000.0,
+                    "AMT_ANNUITY": 25000.0,
+                    "EXT_SOURCE_1": 0.5,
+                    "EXT_SOURCE_2": 0.6,
+                    "EXT_SOURCE_3": 0.55
+                }
+            }
+        }
+
+
 class ClientFeatures(BaseModel):
     """
     Features d'un client pour la prédiction.
