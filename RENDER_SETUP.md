@@ -15,17 +15,28 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
 ### API (`api/Dockerfile`)
 - **Base** : `python:3.10-slim`
 - **Port** : 8000
-- **Contenu** : Code source (`src/`, `api/`), modèles pré-entraînés (`models/`)
+- **Contenu** : 
+  - Code source (`src/`, `api/`)
+  - ✅ **Modèles pré-entraînés inclus** (`models/lgbm_model.joblib`, `preprocessor.joblib`, `model_config.json`)
+  - Dépendances Python pour FastAPI, LightGBM, SHAP
 - **Variables d'env par défaut** :
   - `PORT=8000`
   - `PYTHONPATH=/app`
-- **Health check** : `/health`
+- **Health check** : `/health` (vérifie que les modèles sont chargés)
 - **Commande** : `uvicorn api.main:app --host 0.0.0.0 --port $PORT`
 
 ### Dashboard (`streamlit_app/Dockerfile`)
 - **Base** : `python:3.10-slim`
 - **Port** : 8501
-- **Contenu** : App Streamlit (`app.py`), sources (`src/`), modèles (fallback local)
+- **Contenu** : 
+  - App Streamlit (`app.py`) avec 5 onglets (🎯 Scoring, 📊 Comparaison, 📁 Import/Simulation, 📈 Drift, 📖 Documentation)
+  - Sources (`src/`)
+  - Modèles (fallback local si API indisponible)
+  - **Barre latérale enrichie** :
+    - 🔗 Navigation & Services (liens MLflow, API Docs)
+    - 🏥 État des services (API, MLflow)
+    - 🤖 Informations du modèle (seuil, version)
+    - **📊 Statistiques descriptives du dataset** (nombre clients, taux de défaut, stats financières, démographiques, scores externes)
 - **Variables d'env par défaut** :
   - `PORT=8501`
   - `API_URL=http://localhost:8000`
@@ -186,40 +197,55 @@ MLFLOW_URL=https://home-credit-mlflow.onrender.com
 
 ⚠️ Remplacez par l'URL réelle de votre service MLflow sur Render.
 
-## 🔐 Étape 3 : Configuration GitHub Secrets
+## 🔐 Étape 3 : Configuration GitHub (Optionnel)
 
-### 3.1 Ajouter les secrets dans GitHub
+### 3.1 Workflow CI/CD Simplifié
+
+Le workflow GitHub Actions actuel :
+1. **CI** : Exécute les tests sur chaque push
+2. **CD** : Si tests OK → Build les 3 images Docker → Push vers GHCR
+3. **Déploiement** : **MANUEL** sur Render (cliquez "Manual Deploy")
+
+⚠️ **Note importante** :
+- **En local** (avec `python run.py ...`), aucune variable secrète n'est requise.
+- **Sur Render ou tout environnement distant**, les secrets GitHub sont **OBLIGATOIRES** pour que le déploiement fonctionne correctement (API, Dashboard, MLflow).
+
+### 3.2 Secrets GitHub (**Obligatoires pour Render**)
+
+Pour tout déploiement sur Render (ou tout environnement non local), ajoutez ces secrets dans GitHub :
 
 1. Allez sur votre repo GitHub
 2. **Settings** → **Secrets and variables** → **Actions**
 3. Cliquez sur **"New repository secret"**
 
-**Secrets à ajouter** :
+**Secrets à ajouter (OBLIGATOIRES pour Render)** :
 
-| Nom | Valeur | Description |
-|-----|--------|-------------|
-| `RENDER_API_KEY` | Votre clé API Render | Clé copiée à l'étape 1.4 |
-| `RENDER_SERVICE_API` | `srv-xxxxxxxxxxxxx` | Service ID de l'API (étape 1.5) |
-| `RENDER_SERVICE_DASHBOARD` | `srv-xxxxxxxxxxxxx` | Service ID du Dashboard (étape 2.3) |
-| `RENDER_SERVICE_MLFLOW` | `srv-xxxxxxxxxxxxx` | Service ID de MLflow (étape 2b.4) |
+| Nom | Valeur | Description | Nécessaire ? |
+|-----|--------|-------------|-------------|
+| `RENDER_API_KEY` | Votre clé API Render | Clé copiée à l'étape 1.4 | ✅ Oui (déploiement Render) |
+| `RENDER_SERVICE_API` | `srv-xxxxxxxxxxxxx` | Service ID de l'API (étape 1.5) | ✅ Oui (déploiement Render) |
+| `RENDER_SERVICE_DASHBOARD` | `srv-xxxxxxxxxxxxx` | Service ID du Dashboard (étape 2.3) | ✅ Oui (déploiement Render) |
+| `RENDER_SERVICE_MLFLOW` | `srv-xxxxxxxxxxxxx` | Service ID de MLflow (étape 2b.3) | ✅ Oui (déploiement Render) |
 
-### 3.2 Vérifier les secrets
+> 💡 **Astuce** : Les secrets sont uniquement optionnels si vous testez tout en local avec `run.py`. Pour tout déploiement sur Render, ils sont impératifs.
 
-Dans **Settings → Secrets → Actions**, vous devriez voir :
-```
-RENDER_API_KEY
-RENDER_SERVICE_API
-RENDER_SERVICE_DASHBOARD
-RENDER_SERVICE_MLFLOW
-```
+## ✅ Étape 4 : Déploiement et Test
 
-## ✅ Étape 4 : Tester le Déploiement
+### 4.1 Déploiement manuel sur Render
 
-### 4.1 Premier déploiement manuel sur Render
+**🔴 Important** : Avec le tier gratuit, le déploiement est MANUEL.
 
-1. Retournez dans chaque service sur Render
+**Première fois** :
+1. Retournez dans chaque service sur Render (API, Dashboard, MLflow)
 2. Cliquez sur **"Manual Deploy"** → **"Deploy latest commit"**
 3. Attendez que le build se termine (⏱️ ~5-10 minutes)
+
+**Mises à jour ultérieures** :
+1. Poussez votre code sur `main`
+2. Attendez que le workflow GitHub Actions build les nouvelles images (⏱️ ~10-15 min)
+3. Les images sont automatiquement poussées vers GHCR
+4. **Sur Render, cliquez "Manual Deploy"** pour déployer les nouvelles images
+5. Render va pull les images depuis GHCR et redéployer les services
 
 ### 4.2 Vérifier que les services fonctionnent
 
@@ -240,20 +266,26 @@ Devrait retourner :
 **Dashboard** :
 Ouvrez `https://votre-dashboard.onrender.com` dans votre navigateur.
 
-### 4.3 Tester le déploiement automatique
+### 4.3 Workflow de déploiement automatisé
 
 1. Faites un commit et push sur `main` :
    ```bash
    git add .
-   git commit -m "test: trigger CD pipeline"
+   git commit -m "feat: add new feature"
    git push origin main
    ```
 
 2. Vérifiez dans **Actions** sur GitHub :
-   - CI devrait passer ✅
-   - CD devrait se déclencher automatiquement ✅
-   - Les images Docker devraient être publiées ✅
-   - Render devrait redéployer automatiquement ✅
+   - ✅ CI devrait passer (tests)
+   - ✅ CD devrait se déclencher automatiquement (build images)
+   - ✅ Les images Docker devraient être publiées sur GHCR
+
+3. **Sur Render Dashboard** :
+   - Ouvrez chaque service (API, Dashboard, MLflow)
+   - Cliquez sur **"Manual Deploy"** → **"Clear build cache & deploy"**
+   - Attendez le redéploiement (~5-10 min)
+
+> 💡 **Astuce** : Render pull automatiquement la dernière image `latest` depuis GHCR lors du manual deploy.
 
 ## 🎯 URLs Finales
 
@@ -303,14 +335,23 @@ Ces variables peuvent ensuite être utilisées dans les workflows avec `${{ vars
 graph LR
     A[Push sur main] --> B[CI Tests]
     B --> C{Tests OK?}
-    C -->|Oui| D[Build Docker Images]
+    C -->|🚀 Oui| D[CD: Build Docker Images]
     D --> E[Push vers GHCR]
-    E --> F[Trigger Render Deploy]
-    F --> G[API déployée]
-    F --> H[Dashboard déployé]
-    F --> I[MLflow déployé]
-    C -->|Non| J[Arrêt - Pas de déploiement]
+    E --> F[Images prêtes sur GHCR]
+    F --> G[Manual Deploy sur Render]
+    G --> H[API déployée]
+    G --> I[Dashboard déployé]
+    G --> J[MLflow déployé]
+    C -->|❌ Non| K[Arrêt - Pas de build]
 ```
+
+**Étapes** :
+1. 💾 Push code sur `main`
+2. 🧪 CI exécute les tests
+3. ✅ Si tests OK → CD build les 3 images Docker (API, Dashboard, MLflow)
+4. 📦 Images poussées vers GHCR (GitHub Container Registry)
+5. 👤 **Vous cliquez "Manual Deploy" sur Render** pour chaque service
+6. 🚀 Render pull les images depuis GHCR et déploie
 
 ### 🐛 Dépannage
 
@@ -338,19 +379,47 @@ graph LR
 ## ✅ Checklist Finale
 
 - [ ] Compte Render créé
-- [ ] Web Service API créé
-- [ ] Web Service Dashboard créé  
-- [ ] Web Service MLflow créé
-- [ ] API Key Render générée
-- [ ] Service IDs copiés (API, Dashboard, MLflow)
-- [ ] Secrets GitHub configurés (`RENDER_API_KEY`, `RENDER_SERVICE_API`, `RENDER_SERVICE_DASHBOARD`, `RENDER_SERVICE_MLFLOW`)
-- [ ] Variables d'env configurées sur chaque service Render
-- [ ] Variables GitHub configurées (URLs de déploiement - optionnel)
-- [ ] Premier déploiement manuel réussi
-- [ ] API répond sur `/health`
-- [ ] Dashboard accessible
+- [ ] Web Service API créé (Image: `ghcr.io/username/openclassrooms-ml-ops-api:latest`)
+- [ ] Web Service Dashboard créé (Image: `ghcr.io/username/openclassrooms-ml-ops-dashboard:latest`)
+- [ ] Web Service MLflow créé (Image: `ghcr.io/username/openclassrooms-ml-ops-mlflow:latest`)
+- [ ] Variables d'env configurées sur chaque service Render (`API_URL`, `MLFLOW_URL` pour Dashboard)
+- [ ] (Optionnel) API Key Render générée et Service IDs copiés
+- [ ] (Optionnel) Secrets GitHub configurés (si déploiement automatique souhaité - non actif actuellement)
+- [ ] (Optionnel) Variables GitHub configurées (URLs de déploiement)
+- [ ] Premier déploiement manuel réussi (clic "Manual Deploy")
+- [ ] API répond sur `/health` (modèles chargés)
+- [ ] Dashboard accessible avec statistiques descriptives dans la sidebar
 - [ ] MLflow UI accessible
-- [ ] Déploiement automatique testé
+- [ ] Workflow CI/CD testé (push → tests → build images → GHCR)
+- [ ] Processus de déploiement manuel testé
 - [ ] URLs finales documentées
 
-**Félicitations ! Votre pipeline CI/CD avec MLflow est opérationnel ! 🎉**
+**Félicitations ! Votre pipeline CI/CD avec déploiement manuel sur Render est opérationnel ! 🎉**
+
+---
+
+## 🔍 Récapitulatif des Changements Récents
+
+### ✅ Modèles inclus dans l'API
+- Les modèles (`lgbm_model.joblib`, `preprocessor.joblib`, `model_config.json`) sont **inclus dans l'image Docker** de l'API
+- L'API les charge automatiquement au démarrage depuis `/app/models/`
+- Le health check `/health` vérifie que les modèles sont correctement chargés
+
+### 📊 Sidebar du Dashboard enrichie
+La barre latérale contient maintenant **4 sections** :
+1. **🔗 Navigation & Services** : Liens vers MLflow et API Docs
+2. **🏥 État des Services** : Statut en temps réel de l'API et MLflow
+3. **🤖 Modèle ML** : Seuil optimal et détails techniques
+4. **📊 Statistiques Dataset** (NOUVEAU) :
+   - Métriques générales (nombre clients, variables, taux de défaut)
+   - Statistiques financières (revenu, crédit)
+   - Statistiques démographiques (âge, genre, enfants)
+   - Scores externes (EXT_SOURCE_1, 2, 3)
+
+### 🔄 Workflow CD Simplifié
+- **Avant** : CI/CD avec déploiement automatique via API Render (nécessitait secrets)
+- **Maintenant** : 
+  - CI exécute les tests
+  - CD build les images Docker et les push vers GHCR
+  - **Déploiement MANUEL** sur Render (clic "Manual Deploy")
+- **Avantages** : Plus simple, pas de secrets à configurer, compatible avec tier gratuit Render

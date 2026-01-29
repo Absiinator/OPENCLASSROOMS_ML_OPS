@@ -1,8 +1,8 @@
 # ============================================
-# CD - Déploiement Continu
+# CD - Build et Push Docker Images
 # ============================================
-# Ce workflow déploie l'API et le Dashboard sur Render.
-# IL S'EXÉCUTE UNIQUEMENT APRÈS LA RÉUSSITE DE LA CI.
+# Ce workflow build les images Docker et les pousse vers GHCR.
+# Le déploiement sur Render est MANUEL (tier gratuit).
 
 name: CD - Deploy
 
@@ -13,19 +13,8 @@ on:
     types: [completed]
     branches: [main]
   
-  # Déploiement manuel possible
+  # Build manuel possible
   workflow_dispatch:
-    inputs:
-      deploy_api:
-        description: 'Déployer API'
-        required: true
-        default: true
-        type: boolean
-      deploy_dashboard:
-        description: 'Déployer Dashboard'
-        required: true
-        default: true
-        type: boolean
 
 env:
   PYTHON_VERSION: "3.10"
@@ -43,11 +32,11 @@ jobs:
       should_deploy: ${{ steps.check.outputs.deploy }}
     
     steps:
-      - name: ✅ CI réussie - Déploiement autorisé
+      - name: ✅ CI réussie - Build autorisé
         id: check
         run: |
           echo "deploy=true" >> $GITHUB_OUTPUT
-          echo "✅ La CI a réussi, déploiement autorisé"
+          echo "✅ La CI a réussi, build des images Docker autorisé"
 
   # ============================================
   # Job 1: Build et Push Docker API
@@ -197,239 +186,40 @@ jobs:
           platforms: linux/amd64
 
   # ============================================
-  # Job 4: Déploiement API sur Render
-  # ============================================
-  deploy-api:
-    name: 🚀 Deploy API (Render)
-    runs-on: ubuntu-latest
-    needs: build-api
-    environment:
-      name: production-api
-      url: ${{ steps.deploy.outputs.url }}
-    
-    outputs:
-      url: ${{ steps.deploy.outputs.url }}
-    
-    steps:
-      - name: � Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      
-      - name: �🚀 Déploiement API sur Render
-        id: deploy
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_API: ${{ secrets.RENDER_SERVICE_API }}
-        run: |
-          if [ -n "$RENDER_API_KEY" ] && [ -n "$RENDER_SERVICE_API" ]; then
-            # Déclencher le déploiement
-            curl -s -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_API}/deploys"
-              -H "Authorization: Bearer ${RENDER_API_KEY}" \
-              -H "Content-Type: application/json" \
-              -d '{"clearCache": false}' || true
-            
-            # Attendre et récupérer les infos du service
-            sleep 5
-            SERVICE_JSON=$(curl -s -X GET "https://api.render.com/v1/services/${RENDER_SERVICE_API}" \
-              -H "Authorization: Bearer ${RENDER_API_KEY}" \
-              -H "Content-Type: application/json")
-            
-            # Extraire l'URL du service
-            SERVICE_URL=$(echo "$SERVICE_JSON" | jq -r '.service.serviceDetails.url // .service.url // empty' | sed 's|https://||')
-            
-            # Fallback si extraction échoue
-            if [ -z "$SERVICE_URL" ] || [ "$SERVICE_URL" = "null" ]; then
-              SERVICE_URL="home-credit-api.onrender.com"
-            fi
-            
-            echo "url=https://${SERVICE_URL}" >> $GITHUB_OUTPUT
-            echo "✅ Déploiement API déclenché: https://${SERVICE_URL}"
-          else
-            echo "⚠️ Secrets Render non configurés - Déploiement simulé"
-            echo "url=https://home-credit-api.onrender.com" >> $GITHUB_OUTPUT
-          fi
-
-  # ============================================
-  # Job 4: Déploiement Dashboard sur Render
-  # ============================================
-  deploy-dashboard:
-    name: 🚀 Deploy Dashboard (Render)
-    runs-on: ubuntu-latest
-    needs: [build-dashboard, deploy-api, deploy-mlflow]
-    environment:
-      name: production-dashboard
-      url: ${{ steps.deploy.outputs.url }}
-    
-    outputs:
-      url: ${{ steps.deploy.outputs.url }}
-    
-    steps:
-      - name: � Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: 🚀 Déploiement Dashboard sur Render
-        id: deploy
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_DASHBOARD: ${{ secrets.RENDER_SERVICE_DASHBOARD }}
-          API_URL: ${{ needs.deploy-api.outputs.url }}
-          MLFLOW_URL: ${{ needs.deploy-mlflow.outputs.url }}
-        run: |
-          if [ -n "$RENDER_API_KEY" ] && [ -n "$RENDER_SERVICE_DASHBOARD" ]; then
-            # Déclencher le déploiement avec l'URL de l'API en variable d'environnement
-            curl -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_DASHBOARD}/deploys" \
-              -H "Authorization: Bearer ${RENDER_API_KEY}" \
-              -H "Content-Type: application/json" \
-              -d '{"clearCache": false}'
-            
-            # Attendre et récupérer les infos du service
-            sleep 5
-            SERVICE_JSON=$(curl -s -X GET "https://api.render.com/v1/services/${RENDER_SERVICE_DASHBOARD}" \
-              -H "Authorization: Bearer ${RENDER_API_KEY}" \
-              -H "Content-Type: application/json")
-            
-            # Extraire l'URL du service
-            SERVICE_URL=$(echo "$SERVICE_JSON" | jq -r '.service.serviceDetails.url // .service.url // empty' | sed 's|https://||')
-            
-            # Fallback si extraction échoue
-            if [ -z "$SERVICE_URL" ] || [ "$SERVICE_URL" = "null" ]; then
-              SERVICE_URL="home-credit-dashboard.onrender.com"
-            fi
-            
-            echo "url=https://${SERVICE_URL}" >> $GITHUB_OUTPUT
-            echo "✅ Déploiement Dashboard déclenché: https://${SERVICE_URL}"
-            echo "🔗 API URL passée au Dashboard: ${API_URL}"
-            echo "🔬 MLflow URL passée au Dashboard: ${MLFLOW_URL}"
-          else
-            echo "⚠️ Secrets Render non configurés - Déploiement simulé"
-            echo "url=https://home-credit-dashboard.onrender.com" >> $GITHUB_OUTPUT
-          fi
-
-  # ============================================
-  # Job 6: Déploiement MLflow sur Render
-  # ============================================
-  deploy-mlflow:
-    name: 🚀 Deploy MLflow UI (Render)
-    runs-on: ubuntu-latest
-    needs: build-mlflow
-    environment:
-      name: production-mlflow
-      url: ${{ steps.deploy.outputs.url }}
-    
-    outputs:
-      url: ${{ steps.deploy.outputs.url }}
-    
-    steps:
-      - name: 📦 Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: 🚀 Déploiement MLflow sur Render
-        id: deploy
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_MLFLOW: ${{ secrets.RENDER_SERVICE_MLFLOW }}
-        run: |
-          if [ -n "$RENDER_API_KEY" ] && [ -n "$RENDER_SERVICE_MLFLOW" ]; then
-            # Déclencher le déploiement
-            curl -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_MLFLOW}/deploys" \
-              -H "Authorization: Bearer ${RENDER_API_KEY}" \
-              -H "Content-Type: application/json" \
-              -d '{"clearCache": false}'
-            
-            # Attendre et récupérer les infos du service
-            sleep 5
-            SERVICE_JSON=$(curl -s -X GET "https://api.render.com/v1/services/${RENDER_SERVICE_MLFLOW}" \
-              -H "Authorization: Bearer ${RENDER_API_KEY}" \
-              -H "Content-Type: application/json")
-            
-            # Extraire l'URL du service
-            SERVICE_URL=$(echo "$SERVICE_JSON" | jq -r '.service.serviceDetails.url // .service.url // empty' | sed 's|https://||')
-            
-            # Fallback si extraction échoue
-            if [ -z "$SERVICE_URL" ] || [ "$SERVICE_URL" = "null" ]; then
-              SERVICE_URL="home-credit-mlflow.onrender.com"
-            fi
-            
-            echo "url=https://${SERVICE_URL}" >> $GITHUB_OUTPUT
-            echo "✅ Déploiement MLflow déclenché: https://${SERVICE_URL}"
-          else
-            echo "⚠️ Secrets Render non configurés - Déploiement simulé"
-            echo "url=https://home-credit-mlflow.onrender.com" >> $GITHUB_OUTPUT
-          fi
-
-  # ============================================
-  # Job 7: Tests post-déploiement
-  # ============================================
-  smoke-tests:
-    name: 💨 Smoke Tests
-    runs-on: ubuntu-latest
-    needs: [deploy-api, deploy-dashboard, deploy-mlflow]
-    
-    steps:
-      - name: ⏳ Attente du déploiement
-        run: sleep 90
-      
-      - name: 🧪 Test API Health
-        run: |
-          API_URL="${{ needs.deploy-api.outputs.url }}"
-          if [ -z "$API_URL" ]; then
-            API_URL="https://home-credit-api.onrender.com"
-          fi
-          echo "🔍 Test de l'endpoint /health..."
-          curl -f "${API_URL}/health" || echo "⚠️ API pas encore prête (cold start Render)"
-        continue-on-error: true
-      
-      - name: 🧪 Test Dashboard Health
-        run: |
-          DASH_URL="${{ needs.deploy-dashboard.outputs.url }}"
-          if [ -z "$DASH_URL" ]; then
-            DASH_URL="https://home-credit-dashboard.onrender.com"
-          fi
-          echo "🔍 Test du dashboard..."
-          curl -f "${DASH_URL}/_stcore/health" || echo "⚠️ Dashboard pas encore prêt"
-        continue-on-error: true
-      
-      - name: 🧪 Test MLflow UI Health
-        run: |
-          MLFLOW_URL="${{ needs.deploy-mlflow.outputs.url }}"
-          if [ -z "$MLFLOW_URL" ]; then
-            MLFLOW_URL="https://home-credit-mlflow.onrender.com"
-          fi
-          echo "🔍 Test de MLflow UI..."
-          curl -f "${MLFLOW_URL}" || echo "⚠️ MLflow UI pas encore prêt"
-        continue-on-error: true
-
-  # ============================================
-  # Job 8: Notification finale
+  # Job 4: Notification finale
   # ============================================
   notify:
     name: 📬 Notification
     runs-on: ubuntu-latest
-    needs: [deploy-api, deploy-dashboard, deploy-mlflow, smoke-tests]
+    needs: [build-api, build-dashboard, build-mlflow]
     if: always()
     
     steps:
-      - name: 📬 Résumé du déploiement
+      - name: 📬 Résumé du build
         run: |
           echo "=========================================="
-          echo "       RÉSUMÉ DU DÉPLOIEMENT"
+          echo "       RÉSUMÉ DU BUILD DOCKER"
           echo "=========================================="
           echo ""
-          echo "🌐 API:       ${{ needs.deploy-api.outputs.url }}"
-          echo "📊 Dashboard: ${{ needs.deploy-dashboard.outputs.url }}"
-          echo "🔬 MLflow:    ${{ needs.deploy-mlflow.outputs.url }}"
+          echo "📦 Images disponibles sur GHCR:"
+          echo "   - ghcr.io/${{ github.repository_owner }}/openclassrooms-ml-ops-api:latest"
+          echo "   - ghcr.io/${{ github.repository_owner }}/openclassrooms-ml-ops-dashboard:latest"
+          echo "   - ghcr.io/${{ github.repository_owner }}/openclassrooms-ml-ops-mlflow:latest"
           echo ""
-          if [[ "${{ needs.deploy-api.result }}" == "success" ]]; then
-            echo "✅ API déployée avec succès"
+          if [[ "${{ needs.build-api.result }}" == "success" ]]; then
+            echo "✅ API image built successfully"
           else
-            echo "❌ Échec du déploiement API"
+            echo "❌ Échec du build API"
           fi
-          if [[ "${{ needs.deploy-dashboard.result }}" == "success" ]]; then
-            echo "✅ Dashboard déployé avec succès"
+          if [[ "${{ needs.build-dashboard.result }}" == "success" ]]; then
+            echo "✅ Dashboard image built successfully"
           else
-            echo "❌ Échec du déploiement Dashboard"
+            echo "❌ Échec du build Dashboard"
           fi
-          if [[ "${{ needs.deploy-mlflow.result }}" == "success" ]]; then
-            echo "✅ MLflow UI déployé avec succès"
+          if [[ "${{ needs.build-mlflow.result }}" == "success" ]]; then
+            echo "✅ MLflow image built successfully"
           else
-            echo "❌ Échec du déploiement MLflow"
+            echo "❌ Échec du build MLflow"
           fi
+          echo ""
+          echo "🚀 Déployez manuellement sur Render avec Manual Deploy"

@@ -145,7 +145,12 @@ docker run -p 8000:8000 home-credit-api
 ```
 - **Port** : 8000
 - **Base** : python:3.10-slim
-- **Contient** : Modèle LightGBM, preprocessor, code API FastAPI
+- **Contient** : 
+  - ✅ Modèle LightGBM (`models/lgbm_model.joblib`) - **inclus dans l'image**
+  - ✅ Preprocessor (`models/preprocessor.joblib`) - **inclus dans l'image**
+  - ✅ Configuration du modèle (`models/model_config.json`)
+  - Code API FastAPI
+  - Code source (`src/`, `api/`)
 
 #### 2. Dashboard (streamlit_app/Dockerfile)
 ```bash
@@ -158,7 +163,10 @@ docker run -p 8501:8501 \
 - **Port** : 8501
 - **Base** : python:3.10-slim
 - **Variables obligatoires** : `API_URL` (API FastAPI), `MLFLOW_URL` (Interface MLflow)
-- **Contient** : Application Streamlit avec 5 onglets (Scoring, Comparaison, Import/Simulation, Drift, Documentation)
+- **Contient** : 
+  - Application Streamlit avec 5 onglets (Scoring, Comparaison, Import/Simulation, Drift, Documentation)
+  - Modèles pour fallback local si l'API est indisponible
+  - **Barre latérale enrichie** : Navigation, État des services, Infos modèle, **Statistiques descriptives du dataset**
 
 #### 3. MLflow (mlflow/Dockerfile)
 ```bash
@@ -215,22 +223,28 @@ docker run -p 5000:5000 home-credit-mlflow
 | Endpoint | Méthode | Description |
 |----------|---------|-------------|
 | `/` | GET | Page d'accueil |
-| `/health` | GET | Health check |
+| `/health` | GET | Health check (vérifie que les modèles sont chargés) |
 | `/predict` | POST | Prédiction unique |
 | `/predict/batch` | POST | Prédictions en batch |
 | `/predict/explain` | POST | Prédiction + SHAP |
-| `/model/info` | GET | Infos du modèle |
+| `/model/info` | GET | Infos du modèle (seuil, version, features) |
 | `/model/features` | GET | Liste des features |
+
+**Note** : L'API charge automatiquement les modèles au démarrage depuis `/app/models/` dans Docker.
 
 ### 6. 🔄 CI/CD
 
 - Tests automatisés sur chaque PR (**les tests doivent passer avant le déploiement**)
 - Linting et formatage du code
-- Build Docker automatique
-- Push des images vers GitHub Container Registry (GHCR)
-- Déploiement automatique sur Render
+- **Build Docker automatique** des 3 services (API, Dashboard, MLflow)
+- **Push des images vers GitHub Container Registry (GHCR)**
+- **Déploiement MANUEL sur Render** (tier gratuit - Manual Deploy)
 
-> ⚠️ **Important** : Le déploiement ne s'exécute que si tous les tests CI réussissent.
+> ⚠️ **Important** : 
+> - Le workflow CI/CD **build automatiquement** les images Docker après chaque push sur `main`
+> - Les images sont poussées vers GHCR et sont prêtes à être déployées
+> - Le **déploiement sur Render est MANUEL** via le bouton "Manual Deploy" (tier gratuit)
+> - Le workflow ne s'exécute que si tous les tests CI réussissent
 
 Pour le guide complet de déploiement, consultez [RENDER_SETUP.md](RENDER_SETUP.md).
 
@@ -274,21 +288,28 @@ Le projet utilise **2 workflows GitHub Actions séparés** pour la maintenabilit
    - Linting (black, isort, flake8)
    - Tests unitaires (pytest)
    - Tests API
-   - Build Docker (API + Dashboard)
    - Analyse de sécurité (bandit, safety)
 
-2. **CD (`deploy.yml`)** - Déploiement Continu
+2. **CD (`deploy.yml`)** - Build et Publication des Images
    - **S'exécute uniquement si la CI réussit**
-   - Build et push des images vers GitHub Container Registry
-   - Déploiement automatique sur Render (API et Dashboard)
-   - Tests de fumée post-déploiement
+   - Build des 3 images Docker (API, Dashboard, MLflow)
+   - Push vers GitHub Container Registry (GHCR)
+   - Notification des builds réussis
+   - **Déploiement MANUEL** sur Render (tier gratuit)
 
 ### Flux de déploiement
 
 ```
-Push sur main → CI (tests) → ✅ Succès → CD (deploy) → Render
-                           → ❌ Échec → Pas de déploiement
+Push sur main → CI (tests) → ✅ Succès → CD (build images) → GHCR → Manual Deploy sur Render
+                           → ❌ Échec → Pas de build
 ```
+
+**Étapes** :
+1. Push code sur `main`
+2. CI exécute les tests
+3. Si tests ✅ → CD build les images Docker
+4. Images poussées vers GHCR (GitHub Container Registry)
+5. Sur Render, cliquez "Manual Deploy" pour déployer les nouvelles images
 
 ### Configuration Render (gratuit)
 
@@ -319,14 +340,18 @@ API_URL=https://votre-api.onrender.com
 
 ### Secrets GitHub requis
 
-Pour activer le déploiement automatique, configurez ces secrets dans GitHub :
+Pour publier les images sur GHCR, aucun secret supplémentaire n'est nécessaire (utilise `GITHUB_TOKEN` automatique).
 
-| Secret | Description |
-|--------|-------------|
-| `RENDER_API_KEY` | Clé API Render (Account Settings → API Keys) |
-| `RENDER_SERVICE_API` | ID du service API (visible dans l'URL Render) |
-| `RENDER_SERVICE_DASHBOARD` | ID du service Dashboard (visible dans l'URL Render) |
-| `RENDER_SERVICE_MLFLOW` | ID du service MLflow (visible dans l'URL Render) |
+Si vous souhaitez automatiser le déploiement Render via l'API (non utilisé actuellement) :
+
+| Secret | Description | Nécessaire ? |
+|--------|-------------|-------------|
+| `RENDER_API_KEY` | Clé API Render | ❌ Non (déploiement manuel) |
+| `RENDER_SERVICE_API` | ID du service API | ❌ Non (déploiement manuel) |
+| `RENDER_SERVICE_DASHBOARD` | ID du service Dashboard | ❌ Non (déploiement manuel) |
+| `RENDER_SERVICE_MLFLOW` | ID du service MLflow | ❌ Non (déploiement manuel) |
+
+> 💡 **Note** : Le tier gratuit de Render nécessite un déploiement manuel. Les secrets ci-dessus ne sont utiles que si vous passez au tier payant pour automatiser les déploiements.
 
 ### Variables d'environnement
 

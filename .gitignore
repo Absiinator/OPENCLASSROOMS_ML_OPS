@@ -83,8 +83,10 @@ models/*.onnx
 models/*.pt
 models/*.pth
 
-# Exception: garder la config
+# Exceptions: garder les fichiers nécessaires au déploiement
 !models/model_config.json
+!models/lgbm_model.joblib
+!models/preprocessor.joblib
 
 # ============================================
 # MLflow (tracking local)

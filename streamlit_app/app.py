@@ -79,7 +79,14 @@ API_URL = os.getenv("API_URL", "http://localhost:8000")
 MLFLOW_URL = os.getenv("MLFLOW_URL", "http://localhost:5002")  # Fallback local par défaut
 
 # Chemins locaux pour fallback
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# En Docker: /app est le workdir, sinon on remonte d'un niveau depuis streamlit_app/
+if os.path.exists("/app/models"):
+    # Mode Docker
+    PROJECT_ROOT = "/app"
+else:
+    # Mode local
+    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "lgbm_model.joblib")
 PREPROCESSOR_PATH = os.path.join(PROJECT_ROOT, "models", "preprocessor.joblib")
 DRIFT_REPORT_PATH = os.path.join(PROJECT_ROOT, "reports", "evidently_full_report.html")
@@ -545,7 +552,7 @@ def main():
     
     # Sidebar - Navigation et Configuration
     with st.sidebar:
-        st.header("🔗 Navigation")
+        st.header("🔗 Navigation & Services")
         
         # Liens vers les services
         col1, col2 = st.columns(2)
@@ -554,19 +561,20 @@ def main():
         with col2:
             st.link_button("🌐 API Docs", f"{API_URL}/docs", use_container_width=True)
         
+        st.divider()
+        
+        # Section État des Services
+        st.header("🏥 État des Services")
+        
         # Vérifier la santé de l'API
-        st.subheader("🏥 État de l'API")
         api_healthy = check_api_health()
         if api_healthy:
-            st.success(f"✅ API connectée")
-            st.caption(f"🔗 {API_URL}")
+            st.success("✅ API connectée")
         else:
-            st.warning(f"⚠️ API indisponible")
-            st.caption(f"🔗 {API_URL}")
-            st.info("Mode local en fallback (modèle local)")
+            st.warning("⚠️ API indisponible - Mode local")
+        st.caption(f"🔗 {API_URL}")
         
         # Vérifier MLflow
-        st.subheader("🔬 MLflow UI")
         try:
             mlflow_resp = requests.get(MLFLOW_URL, timeout=3)
             if mlflow_resp.status_code == 200:
@@ -579,14 +587,69 @@ def main():
         
         st.divider()
         
-        # Informations du modèle
-        st.header("📊 Modèle")
+        # Section Informations du Modèle
+        st.header("🤖 Modèle ML")
         model_info = get_model_info()
         if model_info:
-            with st.expander("📋 Détails du modèle"):
+            st.metric("Seuil optimal", f"{model_info.get('threshold', 0.5):.2%}")
+            with st.expander("📋 Détails techniques"):
                 st.json(model_info)
         else:
-            st.info("Chargement des infos du modèle...")
+            st.info("Chargement des infos...")
+        
+        st.divider()
+        
+        # Section Statistiques du Dataset
+        st.header("📊 Statistiques Dataset")
+        
+        if reference_data is not None and not reference_data.empty:
+            # Statistiques générales
+            st.metric("Nombre de clients", f"{len(reference_data):,}")
+            st.metric("Nombre de variables", reference_data.shape[1])
+            
+            # Statistiques sur la target (si disponible)
+            if 'TARGET' in reference_data.columns:
+                target_rate = reference_data['TARGET'].mean()
+                st.metric("Taux de défaut", f"{target_rate:.2%}")
+            
+            with st.expander("💰 Statistiques financières"):
+                if 'AMT_INCOME_TOTAL' in reference_data.columns:
+                    st.write("**Revenu Total**")
+                    st.write(f"- Médiane: {reference_data['AMT_INCOME_TOTAL'].median():,.0f} €")
+                    st.write(f"- Moyenne: {reference_data['AMT_INCOME_TOTAL'].mean():,.0f} €")
+                
+                if 'AMT_CREDIT' in reference_data.columns:
+                    st.write("**Montant Crédit**")
+                    st.write(f"- Médiane: {reference_data['AMT_CREDIT'].median():,.0f} €")
+                    st.write(f"- Moyenne: {reference_data['AMT_CREDIT'].mean():,.0f} €")
+            
+            with st.expander("👥 Statistiques démographiques"):
+                if 'DAYS_BIRTH' in reference_data.columns:
+                    age_years = (-reference_data['DAYS_BIRTH'] / 365).median()
+                    st.write(f"**Âge médian:** {age_years:.0f} ans")
+                
+                if 'CODE_GENDER' in reference_data.columns:
+                    gender_dist = reference_data['CODE_GENDER'].value_counts(normalize=True)
+                    st.write("**Répartition par genre:**")
+                    for gender, pct in gender_dist.items():
+                        st.write(f"- {gender}: {pct:.1%}")
+                
+                if 'CNT_CHILDREN' in reference_data.columns:
+                    avg_children = reference_data['CNT_CHILDREN'].mean()
+                    st.write(f"**Enfants (moyenne):** {avg_children:.1f}")
+            
+            with st.expander("🎯 Scores externes"):
+                for col in ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']:
+                    if col in reference_data.columns:
+                        median_score = reference_data[col].median()
+                        st.write(f"**{col}:** {median_score:.3f} (médiane)")
+        else:
+            st.info("📂 Aucune donnée de référence disponible")
+        
+        st.divider()
+        
+        # Footer avec version
+        st.caption("v1.0.0 - Home Credit Scoring")
     
     # Initialiser features dans session_state pour modification en temps réel
     if 'features' not in st.session_state:
