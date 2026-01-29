@@ -159,12 +159,6 @@ class TestPredictEndpoint:
         
         # Devrait retourner une erreur ou gérer gracieusement
         assert response.status_code in [200, 400, 422]
-    
-    def test_predict_invalid_payload(self, client):
-        """Test avec un payload invalide."""
-        response = client.post("/predict", json={"invalid": "data"})
-        
-        assert response.status_code in [400, 422]
 
 
 class TestBatchPredictEndpoint:

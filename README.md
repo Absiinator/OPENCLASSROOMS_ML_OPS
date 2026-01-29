@@ -280,6 +280,8 @@ pytest tests/test_preprocessing.py -v  # Tests prétraitement
 pytest tests/test_api.py -v         # Tests API
 ```
 
+**Note** : Tests simples et rapides en CI/CD - Aucun test de déploiement (Render testé manuellement).
+
 ## 🔁 CI/CD et Déploiement
 
 ### Architecture CI/CD

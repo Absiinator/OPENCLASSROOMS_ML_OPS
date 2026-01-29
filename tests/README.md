@@ -1,6 +1,10 @@
 # Tests Home Credit Scoring
 
-Ce dossier contient les tests unitaires et d'intégration pour le projet de scoring crédit.
+Tests simples et rapides pour valider les composants essentiels en CI/CD.
+
+**Objectif** : Exécution rapide (<1 min) sans déploiement
+**Scope** : Validation des features critiques uniquement
+**Exclus** : Tests de déploiement sur Render
 
 ## Structure
 
