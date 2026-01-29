@@ -25,9 +25,11 @@ RUN pip install --no-cache-dir mlflow==2.9.2
 # Créer le répertoire pour les artefacts MLflow
 RUN mkdir -p /app/mlruns
 
-# Copier les runs MLflow existants depuis la racine du projet
-# Le contexte de build est à la racine (.) donc mlruns/ est accessible
+# Copier les runs MLflow existants
+# Note: Le contexte de build est à la racine (.)
+# On copie depuis mlruns/ et notebooks/mlruns/ pour avoir tous les experiments
 COPY mlruns/ /app/mlruns/
+COPY notebooks/mlruns/ /app/mlruns/notebooks/
 
 # Exposer le port
 EXPOSE ${PORT}

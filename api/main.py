@@ -224,7 +224,7 @@ async def model_info_endpoint(info: dict = Depends(get_model_info)):
 
 @app.post("/predict", response_model=PredictionResponse, tags=["Prediction"])
 async def predict(
-    payload: dict = Body(...),
+    payload: Dict[str, Any] = Body(...),
     threshold: Optional[float] = Query(None, ge=0, le=1, description="Seuil personnalisé"),
     model_dep = Depends(get_model),
     preprocessor_dep = Depends(get_preprocessor)
@@ -232,8 +232,9 @@ async def predict(
     """
     Prédit la probabilité de défaut pour un client.
     
-    - **client**: Données du client
-    - **threshold**: Seuil de décision personnalisé (optionnel, utilise l'optimal par défaut)
+    Accepte soit:
+    - `{"features": {...}}` (wrapper)
+    - `{...}` (direct features)
     
     Retourne la probabilité, la décision et la catégorie de risque.
     """
@@ -244,8 +245,8 @@ async def predict(
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        # Accept both direct client fields or wrapper {'features': {...}}
-        if isinstance(payload, dict) and 'features' in payload:
+        # Handle both formats: {"features": {...}} or direct {...}
+        if isinstance(payload, dict) and 'features' in payload and not 'AMT_INCOME_TOTAL' in payload:
             client_dict = payload['features']
         else:
             client_dict = payload
@@ -290,7 +291,11 @@ async def predict(
 
 
 @app.post("/predict/batch", response_model=BatchPredictionResponse, tags=["Prediction"])
-async def predict_batch(request: dict = Body(...), model_dep = Depends(get_model), preprocessor_dep = Depends(get_preprocessor)):
+async def predict_batch(
+    request: Dict[str, Any] = Body(...),
+    model_dep = Depends(get_model),
+    preprocessor_dep = Depends(get_preprocessor)
+):
     """
     Prédit la probabilité de défaut pour plusieurs clients.
     
@@ -309,8 +314,7 @@ async def predict_batch(request: dict = Body(...), model_dep = Depends(get_model
     if isinstance(request, dict) and 'clients' in request:
         clients_list = request['clients']
     else:
-        # allow direct BatchPredictionRequest-like dict
-        clients_list = request.get('clients', []) if hasattr(request, 'get') else []
+        clients_list = request.get('clients', []) if isinstance(request, dict) else []
 
     if len(clients_list) == 0:
         raise HTTPException(status_code=400, detail="Liste de clients vide")
@@ -381,7 +385,12 @@ async def predict_batch(request: dict = Body(...), model_dep = Depends(get_model
 
 
 @app.post("/predict/explain", response_model=ExplanationResponse, tags=["Explanation"])
-async def explain_prediction(payload: dict = Body(...), model_dep = Depends(get_model), preprocessor_dep = Depends(get_preprocessor), explainer_dep = Depends(get_explainer)):
+async def explain_prediction(
+    payload: Dict[str, Any] = Body(...),
+    model_dep = Depends(get_model),
+    preprocessor_dep = Depends(get_preprocessor),
+    explainer_dep = Depends(get_explainer)
+):
     """
     Explique la prédiction pour un client avec les features les plus influentes.
     
@@ -396,8 +405,8 @@ async def explain_prediction(payload: dict = Body(...), model_dep = Depends(get_
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        # Accept wrapper {'features': {...}} or direct dict
-        if isinstance(payload, dict) and 'features' in payload:
+        # Handle both formats: {"features": {...}} or direct {...}
+        if isinstance(payload, dict) and 'features' in payload and not 'AMT_INCOME_TOTAL' in payload:
             client_dict = payload['features']
         else:
             client_dict = payload
