@@ -149,6 +149,7 @@ docker run -p 8000:8000 home-credit-api
   - ✅ Modèle LightGBM (`models/lgbm_model.joblib`) - **inclus dans l'image**
   - ✅ Preprocessor (`models/preprocessor.joblib`) - **inclus dans l'image**
   - ✅ Configuration du modèle (`models/model_config.json`)
+  - ✅ **Données téléchargées automatiquement** depuis S3 OpenClassrooms lors du build
   - Code API FastAPI
   - Code source (`src/`, `api/`)
 
@@ -166,6 +167,7 @@ docker run -p 8501:8501 \
 - **Contient** : 
   - Application Streamlit avec 5 onglets (Scoring, Comparaison, Import/Simulation, Drift, Documentation)
   - Modèles pour fallback local si l'API est indisponible
+  - ✅ **Données téléchargées automatiquement** depuis S3 OpenClassrooms lors du build
   - **Barre latérale enrichie** : Navigation, État des services, Infos modèle, **Statistiques descriptives du dataset**
 
 #### 3. MLflow (mlflow/Dockerfile)
@@ -178,7 +180,7 @@ docker run -p 5000:5000 home-credit-mlflow
 - **Contient** : MLflow UI avec les runs d'expérimentation (mlruns/ copié lors du build)
 
 > 📝 **Notes** : 
-> - Les données du dossier `data/` ne sont pas incluses dans les images Docker pour réduire la taille. Seuls les modèles pré-entraînés sont embarqués.
+> - Les **données sont téléchargées automatiquement** depuis le bucket S3 OpenClassrooms lors du build Docker (pas de COPY local).
 > - **MLflow** : Les runs existants dans `mlruns/` sont copiés dans l'image Docker et accessibles en lecture seule sur Render. Nouvelles expériences non persistantes (tier gratuit).
 
 ## 📊 Résultats du modèle

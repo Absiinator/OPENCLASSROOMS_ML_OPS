@@ -24,9 +24,10 @@ RUN useradd --create-home --shell /bin/bash appuser
 
 WORKDIR /app
 
-# Installer les dépendances système minimales
+# Installer les dépendances système minimales (curl et unzip pour télécharger les données)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -43,6 +44,18 @@ COPY models/ ./models/
 
 # Copier les sources nécessaires pour le fallback
 COPY src/ ./src/
+
+# Créer le répertoire data et télécharger les données Home Credit
+# URL: OpenClassrooms S3 bucket
+RUN mkdir -p /app/data \
+    && curl -L -o /tmp/data.zip \
+    "https://s3-eu-west-1.amazonaws.com/static.oc-static.com/prod/courses/files/Parcours_data_scientist/Projet+-+Impl%C3%A9menter+un+mod%C3%A8le+de+scoring/Projet+Mise+en+prod+-+home-credit-default-risk.zip" \
+    && unzip -o /tmp/data.zip -d /app/data/ \
+    && rm /tmp/data.zip \
+    && echo "✅ Données téléchargées et décompressées dans /app/data/"
+
+# Copier les rapports Evidently pour l'onglet Data Drift
+COPY reports/ ./reports/
 
 # Configuration Streamlit
 RUN mkdir -p ~/.streamlit

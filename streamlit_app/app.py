@@ -100,19 +100,21 @@ _LOCAL_PREPROCESSOR = None
 # Fonctions utilitaires
 # ============================================
 
+@st.cache_data(ttl=30, show_spinner=False)
 def check_api_health() -> bool:
-    """Vérifie si l'API est accessible."""
+    """Vérifie si l'API est accessible (cache 30s)."""
     try:
-        response = requests.get(f"{API_URL}/health", timeout=5)
+        response = requests.get(f"{API_URL}/health", timeout=3)
         return response.status_code == 200
     except:
         return False
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def get_model_info() -> Optional[Dict[str, Any]]:
-    """Récupère les informations du modèle."""
+    """Récupère les informations du modèle (cache 5 min)."""
     try:
-        response = requests.get(f"{API_URL}/model/info", timeout=10)
+        response = requests.get(f"{API_URL}/model/info", timeout=5)
         if response.status_code == 200:
             return response.json()
     except:
@@ -133,6 +135,8 @@ def get_model_features() -> Optional[list]:
 
 def predict(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
     """Effectue une prédiction via l'API."""
+    api_error_msg = None
+    
     # Première tentative: appel à l'API
     try:
         response = requests.post(
@@ -142,15 +146,31 @@ def predict(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
         )
         if response.status_code == 200:
             return response.json()
-    except Exception:
-        # Silent fallback to local prediction
-        pass
+        else:
+            # L'API a répondu mais avec une erreur
+            try:
+                error_detail = response.json().get("detail", response.text)
+            except:
+                error_detail = response.text
+            api_error_msg = f"Erreur API ({response.status_code}): {error_detail}"
+    except requests.exceptions.ConnectionError:
+        api_error_msg = "API non accessible - tentative de prédiction locale..."
+    except requests.exceptions.Timeout:
+        api_error_msg = "Timeout de l'API - tentative de prédiction locale..."
+    except Exception as e:
+        api_error_msg = f"Erreur de connexion à l'API: {str(e)}"
 
     # Fallback local: charger modèle + préprocesseur et prédire
     try:
-        return local_predict(features)
-    except Exception as e:
-        st.error(f"Erreur de prédiction locale: {e}")
+        result = local_predict(features)
+        # Si fallback réussi, ne pas afficher d'erreur
+        return result
+    except Exception as local_e:
+        # Afficher l'erreur API si elle existe, sinon l'erreur locale
+        if api_error_msg:
+            st.error(f"🔴 {api_error_msg}")
+        st.error(f"🔴 Fallback local impossible: {local_e}")
+        st.info("💡 Conseil: Vérifiez que l'API est correctement déployée et que les modèles sont chargés.")
         return None
 
 
@@ -263,9 +283,9 @@ def local_explain(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
 # Fonctions pour données de référence et comparaison
 # ============================================
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_reference_data() -> Optional[pd.DataFrame]:
-    """Charge les données de référence pour les comparaisons."""
+    """Charge les données de référence pour les comparaisons (cache 1h)."""
     if os.path.exists(DATA_PATH):
         try:
             df = pd.read_csv(DATA_PATH, nrows=10000)  # Limiter pour performance
@@ -552,123 +572,106 @@ def main():
     
     # Sidebar - Navigation et Configuration
     with st.sidebar:
-        st.header("🔗 Navigation & Services")
+        st.title("🏦 Home Credit")
         
-        # Liens vers les services
+        st.divider()
+        
+        # Section Navigation principale
+        st.header("📍 Navigation")
+        
+        # Boutons de navigation
+        nav_options = [
+            ("🎯 Scoring Client", "scoring"),
+            ("📊 Comparaison", "comparison"),
+            ("📁 Import / Simulation", "simulation"),
+            ("📈 Data Drift", "drift"),
+            ("📖 Documentation", "docs")
+        ]
+        
+        # Initialiser la page dans session_state
+        if 'current_page' not in st.session_state:
+            st.session_state.current_page = "scoring"
+        
+        for label, page_key in nav_options:
+            btn_type = "primary" if st.session_state.current_page == page_key else "secondary"
+            if st.button(label, key=f"nav_{page_key}", use_container_width=True, type=btn_type):
+                st.session_state.current_page = page_key
+                st.rerun()
+        
+        st.divider()
+        
+        # Liens services externes
+        st.header("🔗 Services")
         col1, col2 = st.columns(2)
         with col1:
             st.link_button("📊 MLflow", MLFLOW_URL, use_container_width=True)
         with col2:
-            st.link_button("🌐 API Docs", f"{API_URL}/docs", use_container_width=True)
+            st.link_button("🌐 API", f"{API_URL}/docs", use_container_width=True)
         
         st.divider()
         
-        # Section État des Services
-        st.header("🏥 État des Services")
+        # Section État des Services (compact)
+        st.header("🏥 État")
         
-        # Vérifier la santé de l'API
         api_healthy = check_api_health()
-        if api_healthy:
-            st.success("✅ API connectée")
-        else:
-            st.warning("⚠️ API indisponible - Mode local")
-        st.caption(f"🔗 {API_URL}")
+        drift_exists = os.path.exists(DRIFT_REPORT_PATH)
         
-        # Vérifier MLflow
-        try:
-            mlflow_resp = requests.get(MLFLOW_URL, timeout=3)
-            if mlflow_resp.status_code == 200:
-                st.success("✅ MLflow connecté")
-            else:
-                st.warning("⚠️ MLflow indisponible")
-        except:
-            st.warning("⚠️ MLflow indisponible")
-        st.caption(f"🔗 {MLFLOW_URL}")
+        st.write(f"{'✅' if api_healthy else '⚠️'} API: {'OK' if api_healthy else 'Hors ligne'}")
+        st.write(f"{'✅' if drift_exists else '⚠️'} Drift: {'OK' if drift_exists else 'Absent'}")
         
         st.divider()
         
-        # Section Informations du Modèle
-        st.header("🤖 Modèle ML")
+        # Section Modèle ML (compact)
+        st.header("🤖 Modèle")
         model_info = get_model_info()
         if model_info:
-            st.metric("Seuil optimal", f"{model_info.get('threshold', 0.5):.2%}")
-            with st.expander("📋 Détails techniques"):
-                st.json(model_info)
+            st.metric("Seuil", f"{model_info.get('threshold', 0.5):.2%}")
         else:
-            st.info("Chargement des infos...")
+            st.caption("Infos indisponibles")
         
         st.divider()
         
-        # Section Statistiques du Dataset
-        st.header("📊 Statistiques Dataset")
+        # Section Statistiques du Dataset (compact)
+        st.header("📊 Dataset")
         
         if reference_data is not None and not reference_data.empty:
-            # Statistiques générales
-            st.metric("Nombre de clients", f"{len(reference_data):,}")
-            st.metric("Nombre de variables", reference_data.shape[1])
+            st.metric("Clients", f"{len(reference_data):,}")
             
-            # Statistiques sur la target (si disponible)
             if 'TARGET' in reference_data.columns:
-                target_rate = reference_data['TARGET'].mean()
-                st.metric("Taux de défaut", f"{target_rate:.2%}")
+                st.metric("Taux défaut", f"{reference_data['TARGET'].mean():.1%}")
             
-            with st.expander("💰 Statistiques financières"):
+            with st.expander("💰 Finances"):
                 if 'AMT_INCOME_TOTAL' in reference_data.columns:
-                    st.write("**Revenu Total**")
-                    st.write(f"- Médiane: {reference_data['AMT_INCOME_TOTAL'].median():,.0f} €")
-                    st.write(f"- Moyenne: {reference_data['AMT_INCOME_TOTAL'].mean():,.0f} €")
-                
+                    st.write(f"Revenu: {reference_data['AMT_INCOME_TOTAL'].median():,.0f}€")
                 if 'AMT_CREDIT' in reference_data.columns:
-                    st.write("**Montant Crédit**")
-                    st.write(f"- Médiane: {reference_data['AMT_CREDIT'].median():,.0f} €")
-                    st.write(f"- Moyenne: {reference_data['AMT_CREDIT'].mean():,.0f} €")
+                    st.write(f"Crédit: {reference_data['AMT_CREDIT'].median():,.0f}€")
             
-            with st.expander("👥 Statistiques démographiques"):
-                if 'DAYS_BIRTH' in reference_data.columns:
-                    age_years = (-reference_data['DAYS_BIRTH'] / 365).median()
-                    st.write(f"**Âge médian:** {age_years:.0f} ans")
-                
-                if 'CODE_GENDER' in reference_data.columns:
-                    gender_dist = reference_data['CODE_GENDER'].value_counts(normalize=True)
-                    st.write("**Répartition par genre:**")
-                    for gender, pct in gender_dist.items():
-                        st.write(f"- {gender}: {pct:.1%}")
-                
-                if 'CNT_CHILDREN' in reference_data.columns:
-                    avg_children = reference_data['CNT_CHILDREN'].mean()
-                    st.write(f"**Enfants (moyenne):** {avg_children:.1f}")
-            
-            with st.expander("🎯 Scores externes"):
+            with st.expander("📊 Scores"):
                 for col in ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']:
                     if col in reference_data.columns:
-                        median_score = reference_data[col].median()
-                        st.write(f"**{col}:** {median_score:.3f} (médiane)")
+                        st.write(f"{col}: {reference_data[col].median():.3f}")
         else:
-            st.info("📂 Aucune donnée de référence disponible")
+            st.warning("📂 Données manquantes")
+            st.caption("Copiez application_train.csv dans data/")
         
         st.divider()
-        
-        # Footer avec version
-        st.caption("v1.0.0 - Home Credit Scoring")
+        st.caption("v1.0.0 • Home Credit Scoring")
     
     # Initialiser features dans session_state pour modification en temps réel
     if 'features' not in st.session_state:
         st.session_state.features = {}
     
-    # Contenu principal avec 5 onglets
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "🎯 Scoring Client", 
-        "📊 Comparaison", 
-        "📁 Import / Simulation",
-        "📈 Data Drift", 
-        "📖 Documentation"
-    ])
+    # ============================================
+    # Contenu principal basé sur la navigation
+    # ============================================
+    
+    current_page = st.session_state.get('current_page', 'scoring')
     
     # ============================================
-    # Tab 1: Scoring Client - Score, probabilité, interprétation
+    # Page: Scoring Client
     # ============================================
-    with tab1:
-        st.header("Évaluation du risque client")
+    if current_page == "scoring":
+        st.header("🎯 Évaluation du risque client")
         st.markdown("Saisissez les caractéristiques pour obtenir le score avec une interprétation détaillée.")
         
         col1, col2, col3 = st.columns(3)
@@ -899,9 +902,9 @@ def main():
                         st.markdown(f"- **{feat}** ({val:.3f}): {expl}")
     
     # ============================================
-    # Tab 2: Comparaison avec la population
+    # Page: Comparaison avec la population
     # ============================================
-    with tab2:
+    elif current_page == "comparison":
         st.header("📊 Comparaison avec la population")
         
         if reference_data is None:
@@ -975,12 +978,12 @@ def main():
                         - Position du client: **{percentile:.0f}e percentile**
                         """)
             else:
-                st.info("👆 Veuillez d'abord saisir les caractéristiques d'un client dans l'onglet 'Scoring Client'")
+                st.info("👆 Veuillez d'abord saisir les caractéristiques d'un client dans 'Scoring Client'")
     
     # ============================================
-    # Tab 3: Import fichier / Simulation temps réel
+    # Page: Import fichier / Simulation temps réel
     # ============================================
-    with tab3:
+    elif current_page == "simulation":
         st.header("📁 Import de fichier et simulation")
         
         # Section Import
@@ -1113,12 +1116,12 @@ def main():
                     else:
                         st.info("ℹ️ Pas de changement significatif")
         else:
-            st.info("👆 Saisissez d'abord un client dans l'onglet 'Scoring Client'")
+            st.info("👆 Saisissez d'abord un client dans 'Scoring Client'")
     
     # ============================================
-    # Tab 4: Data Drift
+    # Page: Data Drift
     # ============================================
-    with tab4:
+    elif current_page == "drift":
         st.header("📈 Surveillance du Data Drift")
         
         st.markdown("""
@@ -1151,9 +1154,9 @@ def main():
             """)
     
     # ============================================
-    # Tab 5: Documentation
+    # Page: Documentation
     # ============================================
-    with tab5:
+    elif current_page == "docs":
         st.header("📖 Documentation")
         
         st.markdown(f"""

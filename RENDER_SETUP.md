@@ -18,7 +18,12 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
 - **Contenu** : 
   - Code source (`src/`, `api/`)
   - ✅ **Modèles pré-entraînés inclus** (`models/lgbm_model.joblib`, `preprocessor.joblib`, `model_config.json`)
+  - ✅ **Données téléchargées automatiquement** depuis S3 OpenClassrooms lors du build
   - Dépendances Python pour FastAPI, LightGBM, SHAP
+- **Téléchargement des données** : Le Dockerfile télécharge et décompresse automatiquement les données depuis :
+  ```
+  https://s3-eu-west-1.amazonaws.com/static.oc-static.com/.../home-credit-default-risk.zip
+  ```
 - **Variables d'env par défaut** :
   - `PORT=8000`
   - `PYTHONPATH=/app`
@@ -32,11 +37,13 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
   - App Streamlit (`app.py`) avec 5 onglets (🎯 Scoring, 📊 Comparaison, 📁 Import/Simulation, 📈 Drift, 📖 Documentation)
   - Sources (`src/`)
   - Modèles (fallback local si API indisponible)
+  - ✅ **Données téléchargées automatiquement** depuis S3 OpenClassrooms lors du build
   - **Barre latérale enrichie** :
     - 🔗 Navigation & Services (liens MLflow, API Docs)
     - 🏥 État des services (API, MLflow)
     - 🤖 Informations du modèle (seuil, version)
     - **📊 Statistiques descriptives du dataset** (nombre clients, taux de défaut, stats financières, démographiques, scores externes)
+- **Téléchargement des données** : Le Dockerfile télécharge et décompresse automatiquement les données
 - **Variables d'env par défaut** :
   - `PORT=8501`
   - `API_URL=http://localhost:8000`
@@ -53,8 +60,8 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
 - **Commande** : `mlflow server --host 0.0.0.0 --port $PORT`
 
 ⚠️ **Notes importantes** : 
-- Les données volumineuses (`data/`) ne sont **PAS** incluses dans les images Docker
-- Le Dashboard gère gracieusement leur absence (feature de comparaison désactivée)
+- Les **données sont téléchargées automatiquement** lors du build Docker depuis le bucket S3 OpenClassrooms (~500MB)
+- Le build Docker prend environ 5-10 minutes supplémentaires pour le téléchargement
 - **MLflow** : Les runs du dossier `mlruns/` local sont copiés dans l'image Docker lors du build GitHub Actions. Ils sont accessibles en lecture seule sur Render. Pour persister de nouvelles expériences en production, un backend S3 serait nécessaire (option payante non couverte).
 ### Résumé des variables d'environnement par service
 

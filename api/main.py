@@ -250,21 +250,9 @@ async def predict(
         else:
             client_dict = payload
 
-        # Validate payload: if not wrapped and keys are not recognised features, return 400
-        accepted_feature_names = []
-        if used_preprocessor is not None:
-            accepted_feature_names = getattr(used_preprocessor, 'feature_names', []) or []
-        elif hasattr(used_model, 'feature_names_'):
-            accepted_feature_names = getattr(used_model, 'feature_names_', []) or []
-
-        if not (isinstance(payload, dict) and 'features' in payload):
-            payload_keys = set(client_dict.keys()) if isinstance(client_dict, dict) else set()
-            if not payload_keys:
-                raise HTTPException(status_code=400, detail="Payload invalide: features manquantes")
-            if accepted_feature_names:
-                # if no intersection between provided keys and accepted feature names, consider invalid
-                if payload_keys.isdisjoint(set(accepted_feature_names)):
-                    raise HTTPException(status_code=400, detail="Payload invalide: features non reconnues")
+        # Vérifier que le payload contient des données
+        if not isinstance(client_dict, dict) or not client_dict:
+            raise HTTPException(status_code=400, detail="Payload invalide: features manquantes")
 
         df = pd.DataFrame([client_dict])
         
@@ -467,7 +455,7 @@ async def explain_prediction(payload: dict = Body(...), model_dep = Depends(get_
             ))
         
         return ExplanationResponse(
-            client_id=client.SK_ID_CURR,
+            client_id=client_dict.get('SK_ID_CURR') if isinstance(client_dict, dict) else None,
             probability=round(probability, 4),
             prediction=prediction,
             decision=Decision.REFUSED if prediction == 1 else Decision.ACCEPTED,

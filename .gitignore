@@ -59,17 +59,13 @@ profile_default/
 ipython_config.py
 
 # ============================================
-# Donnees (VOLUMINEUSES - ne pas versionner)
+# Donnees
 # ============================================
-data/*.csv
-data/*.parquet
-data/*.feather
-data/raw/
-data/processed/
-
-# Exceptions: garder les fichiers requirements
-!api/requirements.txt
-!streamlit_app/requirements.txt
+# Les données sont téléchargées automatiquement lors du build Docker
+# Elles ne sont pas versionnées car volumineuses (>500MB)
+# URL: https://s3-eu-west-1.amazonaws.com/.../home-credit-default-risk.zip
+data/
+!data/README.md
 
 # ============================================
 # Modeles (VOLUMINEUX - ne pas versionner)
