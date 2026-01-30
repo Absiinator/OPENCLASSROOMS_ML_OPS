@@ -11,10 +11,10 @@ LABEL maintainer="Home Credit Scoring Team"
 LABEL version="1.0.0"
 LABEL description="MLflow UI Server Home Credit Scoring"
 
-# Variables d'environnement
+# Variables d'environnement (aucune variable spécifique requise sur Render pour MLflow)
+# PORT sera défini automatiquement par Render
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    MLFLOW_TRACKING_URI=/app/mlruns \
     PORT=5000
 
 WORKDIR /app
@@ -47,6 +47,7 @@ RUN echo "🔧 Nettoyage et configuration MLflow..." && \
 # Exposer le port
 EXPOSE ${PORT}
 
-# Commande de démarrage SANS gunicorn (utiliser le serveur intégré plus léger)
-# Le serveur MLflow intégré est suffisant pour le tier gratuit
-CMD ["sh", "-c", "mlflow server --host 0.0.0.0 --port ${PORT} --backend-store-uri /app/mlruns --default-artifact-root /app/mlruns"]
+# Commande de démarrage avec mlflow ui (plus léger que mlflow server)
+# mlflow ui utilise Flask intégré au lieu de gunicorn - parfait pour tier gratuit
+# Options: --host pour écouter sur toutes interfaces, --port dynamique Render
+CMD ["sh", "-c", "mlflow ui --host 0.0.0.0 --port ${PORT} --backend-store-uri /app/mlruns"]

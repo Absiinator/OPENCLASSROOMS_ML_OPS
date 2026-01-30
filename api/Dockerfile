@@ -11,12 +11,13 @@ LABEL maintainer="Home Credit Scoring Team"
 LABEL version="1.0.0"
 LABEL description="API de scoring crédit Home Credit"
 
-# Variables d'environnement (noms conformes à RENDER_SETUP.md)
+# Variables d'environnement (noms conformes aux services Render)
+# HOST et PORT sont les seules variables pour l'API
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    PORT=8000 \
-    HOST=0.0.0.0
+    HOST=0.0.0.0 \
+    PORT=8000
 
 # Créer un utilisateur non-root pour la sécurité
 RUN useradd --create-home --shell /bin/bash appuser
@@ -69,5 +70,5 @@ EXPOSE ${PORT}
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health')" || exit 1
 
-# Commande de démarrage
-CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port ${PORT}"]
+# Commande de démarrage utilisant HOST et PORT
+CMD ["sh", "-c", "echo '[API] Démarrage avec HOST=${HOST} PORT=${PORT}' && uvicorn api.main:app --host ${HOST} --port ${PORT}"]

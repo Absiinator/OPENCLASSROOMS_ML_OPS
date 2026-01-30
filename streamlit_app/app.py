@@ -75,8 +75,20 @@ st.markdown("""
 # Variables globales
 # ============================================
 # Endpoints configurés via variables d'environnement (déploiement Render)
+# Ces variables DOIVENT être configurées dans Render → Environment
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 MLFLOW_URL = os.getenv("MLFLOW_URL", "http://localhost:5000")
+
+# === LOGS DEBUG AU DÉMARRAGE ===
+print("=" * 60)
+print("[STREAMLIT] CONFIGURATION DES VARIABLES D'ENVIRONNEMENT")
+print("=" * 60)
+print(f"[STREAMLIT] API_URL = {API_URL}")
+print(f"[STREAMLIT] MLFLOW_URL = {MLFLOW_URL}")
+print(f"[STREAMLIT] STREAMLIT_SERVER_ADDRESS = {os.getenv('STREAMLIT_SERVER_ADDRESS', 'non défini')}")
+print(f"[STREAMLIT] STREAMLIT_SERVER_PORT = {os.getenv('STREAMLIT_SERVER_PORT', 'non défini')}")
+print(f"[STREAMLIT] PORT = {os.getenv('PORT', 'non défini')}")
+print("=" * 60)
 
 # Chemins pour données et rapports (téléchargés dans Docker)
 if os.path.exists("/app/data"):
@@ -504,6 +516,12 @@ def main():
         
         # Liens services externes
         st.header("🔗 Services")
+        
+        # Debug : afficher les URLs configurées
+        with st.expander("🔍 URLs configurées", expanded=False):
+            st.code(f"API_URL={API_URL}")
+            st.code(f"MLFLOW_URL={MLFLOW_URL}")
+        
         col1, col2 = st.columns(2)
         with col1:
             st.link_button("📊 MLflow", MLFLOW_URL, use_container_width=True)

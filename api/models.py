@@ -29,25 +29,79 @@ class PredictionRequest(BaseModel):
     """Requête de prédiction simple avec features en dictionnaire.
     
     Accepte les formats:
-    - {"features": {...}}  (format principal - utilisé par le Dashboard)
+    - {"features": {...}}  (format principal - utilisé par le Dashboard Streamlit)
     - {"data": {...}}      (format alternatif pour compatibilité)
     
-    Au moins un des deux champs doit être fourni.
+    Exemple de requête curl:
+    ```bash
+    curl -X POST "https://votre-api.onrender.com/predict" \
+         -H "Content-Type: application/json" \
+         -d '{"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, "EXT_SOURCE_1": 0.5}}'
+    ```
     """
-    features: Optional[Dict[str, Any]] = Field(default=None, description="Dictionnaire des features du client")
-    data: Optional[Dict[str, Any]] = Field(default=None, description="Alias pour features (compatibilité)")
+    # Les deux champs sont optionnels - on accepte l'un OU l'autre
+    features: Optional[Dict[str, Any]] = Field(
+        default=None, 
+        description="Dictionnaire des features du client (format principal)"
+    )
+    data: Optional[Dict[str, Any]] = Field(
+        default=None, 
+        description="Alias pour features (compatibilité avec anciens clients)"
+    )
+    
+    # Configuration pour accepter des champs supplémentaires sans erreur
+    model_config = {
+        "extra": "ignore",  # Ignorer les champs supplémentaires
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "features": {
+                        "AMT_INCOME_TOTAL": 150000.0,
+                        "AMT_CREDIT": 500000.0,
+                        "AMT_ANNUITY": 25000.0,
+                        "AMT_GOODS_PRICE": 450000.0,
+                        "DAYS_BIRTH": -12775,
+                        "DAYS_EMPLOYED": -1825,
+                        "CNT_CHILDREN": 1,
+                        "CODE_GENDER_M": 1,
+                        "FLAG_OWN_CAR": 1,
+                        "FLAG_OWN_REALTY": 1,
+                        "EXT_SOURCE_1": 0.5,
+                        "EXT_SOURCE_2": 0.6,
+                        "EXT_SOURCE_3": 0.55,
+                        "REGION_RATING_CLIENT": 2,
+                        "CREDIT_INCOME_RATIO": 3.33,
+                        "ANNUITY_INCOME_RATIO": 0.17,
+                        "EXT_SOURCE_MEAN": 0.55
+                    }
+                },
+                {
+                    "data": {
+                        "AMT_INCOME_TOTAL": 100000.0,
+                        "AMT_CREDIT": 300000.0,
+                        "EXT_SOURCE_1": 0.4,
+                        "EXT_SOURCE_2": 0.5,
+                        "EXT_SOURCE_3": 0.45
+                    }
+                }
+            ]
+        }
+    }
     
     @model_validator(mode='before')
     @classmethod
-    def check_features_or_data(cls, values):
-        """Valide qu'au moins 'features' ou 'data' est fourni."""
+    def normalize_input(cls, values):
+        """Normalise l'entrée pour accepter features ou data."""
         if isinstance(values, dict):
-            features = values.get('features')
-            data = values.get('data')
-            # Si aucun n'est fourni, créer un dict vide pour éviter l'erreur 422
-            if features is None and data is None:
-                # On accepte quand même - la validation se fera dans l'endpoint
-                pass
+            # Log pour debug
+            print(f"[DEBUG] PredictionRequest reçu: {list(values.keys())}")
+            
+            # Si ni features ni data n'est fourni, vérifier si c'est un dict plat
+            if 'features' not in values and 'data' not in values:
+                # Peut-être que les features sont directement à la racine
+                if any(k in values for k in ['AMT_INCOME_TOTAL', 'AMT_CREDIT', 'EXT_SOURCE_1']):
+                    print(f"[DEBUG] Format plat détecté, conversion en features")
+                    values = {'features': values}
         return values
     
     def get_features_dict(self) -> Dict[str, Any]:
@@ -57,20 +111,6 @@ class PredictionRequest(BaseModel):
         if self.data is not None:
             return self.data
         return {}
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "features": {
-                    "AMT_INCOME_TOTAL": 150000.0,
-                    "AMT_CREDIT": 500000.0,
-                    "AMT_ANNUITY": 25000.0,
-                    "EXT_SOURCE_1": 0.5,
-                    "EXT_SOURCE_2": 0.6,
-                    "EXT_SOURCE_3": 0.55
-                }
-            }
-        }
 
 
 class ClientFeatures(BaseModel):

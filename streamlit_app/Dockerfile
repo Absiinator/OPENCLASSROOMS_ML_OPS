@@ -11,14 +11,17 @@ LABEL maintainer="Home Credit Scoring Team"
 LABEL version="1.0.0"
 LABEL description="Dashboard Streamlit Home Credit Scoring"
 
-# Variables d'environnement (noms conformes à RENDER_SETUP.md)
-# Ces valeurs par défaut seront surchargées par Render
+# Variables d'environnement (noms conformes aux services Render)
+# API_URL et MLFLOW_URL seront configurées sur Render
+# STREAMLIT_SERVER_ADDRESS et STREAMLIT_SERVER_PORT pour la configuration Streamlit
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
     PORT=8501 \
     API_URL=http://localhost:8000 \
-    MLFLOW_URL=http://localhost:5000
+    MLFLOW_URL=http://localhost:5000 \
+    STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
+    STREAMLIT_SERVER_PORT=8501
 
 # Créer un utilisateur non-root
 RUN useradd --create-home --shell /bin/bash appuser
@@ -82,5 +85,5 @@ EXPOSE 8501
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8501/_stcore/health || exit 1
 
-# Commande de démarrage
-CMD ["sh", "-c", "streamlit run app.py --server.port=${PORT} --server.address=0.0.0.0"]
+# Commande de démarrage avec logs des variables d'environnement
+CMD ["sh", "-c", "echo '[DASHBOARD] API_URL=${API_URL}' && echo '[DASHBOARD] MLFLOW_URL=${MLFLOW_URL}' && echo '[DASHBOARD] PORT=${PORT}' && streamlit run app.py --server.port=${PORT} --server.address=${STREAMLIT_SERVER_ADDRESS}"]

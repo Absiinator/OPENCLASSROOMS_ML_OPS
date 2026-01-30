@@ -67,15 +67,27 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
 
 | Service | Variable | Valeur par défaut (Dockerfile) | Configurer sur Render ? |
 |---------|----------|-------------------------------|------------------------|
-| **API** | `PORT` | 8000 | ❌ Non (Render le définit automatiquement) |
 | **API** | `HOST` | 0.0.0.0 | ❌ Non (défini dans Dockerfile) |
-| **Dashboard** | `PORT` | 8501 | ❌ Non (Render le définit automatiquement) |
+| **API** | `PORT` | 8000 | ❌ Non (Render le définit automatiquement) |
 | **Dashboard** | `API_URL` | http://localhost:8000 | ✅ **OUI - OBLIGATOIRE** : `https://votre-api.onrender.com` |
 | **Dashboard** | `MLFLOW_URL` | http://localhost:5000 | ✅ **OUI - OBLIGATOIRE** : `https://votre-mlflow.onrender.com` |
+| **Dashboard** | `STREAMLIT_SERVER_ADDRESS` | 0.0.0.0 | ❌ Non (défini dans Dockerfile) |
+| **Dashboard** | `STREAMLIT_SERVER_PORT` | 8501 | ❌ Non (défini dans Dockerfile) |
+| **Dashboard** | `PORT` | 8501 | ❌ Non (Render le définit automatiquement) |
 | **MLflow** | `PORT` | 5000 | ❌ Non (Render le définit automatiquement) |
-| **MLflow** | `MLFLOW_TRACKING_URI` | /app/mlruns | ❌ Non (défini dans Dockerfile) |
 
 > 💡 **Important** : Seules `API_URL` et `MLFLOW_URL` du Dashboard nécessitent une configuration manuelle sur Render.
+
+### Secrets GitHub Actions (dans le repo distant)
+
+| Secret | Description |
+|--------|-------------|
+| `RENDER_API_KEY` | Clé API Render (non utilisée actuellement - déploiement manuel) |
+| `RENDER_SERVICE_API` | ID du service API sur Render |
+| `RENDER_SERVICE_DASHBOARD` | ID du service Dashboard sur Render |
+| `RENDER_SERVICE_MLFLOW` | ID du service MLflow sur Render |
+
+> ⚠️ Ces secrets ne sont **pas utilisés** dans le workflow actuel (déploiement manuel). Ils sont prévus pour un futur déploiement automatique.
 
 ---
 
@@ -127,16 +139,25 @@ ghcr.io/absiinator/openclassrooms-ml-ops-dashboard:latest
 
 ### 2.2 Variables d'environnement Dashboard
 
-**✅ OBLIGATOIRE** - Ajoutez ces variables dans Render :
+**🚨 OBLIGATOIRE** - Ajoutez ces variables dans Render (onglet "Environment") :
 ```bash
 API_URL=https://home-credit-api.onrender.com
 MLFLOW_URL=https://home-credit-mlflow.onrender.com
 ```
 
-> ⚠️ **Important** : 
-> - Remplacez `home-credit-api.onrender.com` par l'URL réelle de votre API
-> - Remplacez `home-credit-mlflow.onrender.com` par l'URL réelle de votre MLflow (à configurer à l'étape 2b)
-> - Ces variables sont **obligatoires** - le Dashboard ne fonctionnera pas sans elles
+> ⚠️ **ATTENTION - Configuration Critique** : 
+> 1. **Ces variables DOIVENT être configurées dans Render Web Service → Environment**
+> 2. Remplacez `home-credit-api.onrender.com` par l'URL **réelle** de votre service API Render
+> 3. Remplacez `home-credit-mlflow.onrender.com` par l'URL **réelle** de votre service MLflow Render
+> 4. **Format correct** : `https://` + nom-du-service + `.onrender.com`
+> 5. **Ne pas utiliser les valeurs par défaut** `localhost:8000` et `localhost:5000` (ne fonctionnent pas en production)
+> 6. **Redémarrer le service Dashboard** après avoir ajouté les variables
+> 
+> 💡 **Comment trouver vos URLs** :
+> - API URL : Dashboard Render → service API → copier "Live URL" (ex: `https://home-credit-api.onrender.com`)
+> - MLflow URL : Dashboard Render → service MLflow → copier "Live URL" (ex: `https://home-credit-mlflow.onrender.com`)
+> 
+> 🐛 **Debug** : Dans le Dashboard, cliquez sur "🔍 URLs configurées" dans la sidebar pour vérifier les URLs actives
 
 ## � Étape 2b : Configuration MLflow sur Render
 
@@ -164,11 +185,19 @@ ghcr.io/absiinator/openclassrooms-ml-ops-mlflow:latest
 | **Instance Type** | Free (512MB RAM) |
 | **Port** | 5000 (ou `$PORT`) |
 
-⚠️ **Important - Optimisations appliquées** :
-- Le Dockerfile utilise le **serveur MLflow intégré** (plus léger que gunicorn)
+⚠️ **Important - Optimisations pour Free Tier** :
+- Le Dockerfile utilise **`mlflow ui`** au lieu de `mlflow server` (pas de gunicorn = moins de RAM)
+- `mlflow ui` utilise Flask intégré - **parfait pour 512MB RAM du tier gratuit**
 - Les chemins `artifact_location` et `artifact_uri` sont automatiquement corrigés pour Docker
 - Dépendances minimales pour économiser la RAM
 - Le premier démarrage peut prendre 30-60 secondes
+
+💡 **Si MLflow crash avec "Out of Memory"** :
+1. Vérifier les logs Render : `Worker was sent SIGKILL! Perhaps out of memory?`
+2. Solutions : 
+   - ✅ Upgrade vers un plan payant (512MB → 2GB RAM)
+   - ⚠️ Redémarrer le service (solution temporaire)
+   - 🔄 Alternative : utiliser un stockage S3 au lieu du système de fichiers local
 
 ### 2b.3 Variables d'environnement MLflow
 

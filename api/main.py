@@ -134,7 +134,15 @@ def load_model_artifacts():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gestionnaire du cycle de vie de l'application."""
-    # Startup
+    # Startup - Afficher les variables d'environnement
+    print("=" * 60)
+    print("[API] CONFIGURATION DES VARIABLES D'ENVIRONNEMENT")
+    print("=" * 60)
+    print(f"[API] HOST = {os.getenv('HOST', 'non défini')}")
+    print(f"[API] PORT = {os.getenv('PORT', 'non défini')}")
+    print(f"[API] PYTHONPATH = {os.getenv('PYTHONPATH', 'non défini')}")
+    print("=" * 60)
+    
     try:
         load_model_artifacts()
         print("🚀 API démarrée avec succès!")
@@ -233,22 +241,67 @@ async def predict(
     """
     Prédit la probabilité de défaut pour un client.
     
-    Accepte: `{"features": {...}}`
+    ## Format de requête
     
-    Retourne la probabilité, la décision et la catégorie de risque.
+    Accepte deux formats équivalents:
+    
+    **Format 1 (recommandé):**
+    ```json
+    {
+        "features": {
+            "AMT_INCOME_TOTAL": 150000.0,
+            "AMT_CREDIT": 500000.0,
+            "AMT_ANNUITY": 25000.0,
+            "EXT_SOURCE_1": 0.5,
+            "EXT_SOURCE_2": 0.6,
+            "EXT_SOURCE_3": 0.55
+        }
+    }
+    ```
+    
+    **Format 2 (compatibilité):**
+    ```json
+    {
+        "data": {
+            "AMT_INCOME_TOTAL": 150000.0,
+            "AMT_CREDIT": 500000.0
+        }
+    }
+    ```
+    
+    ## Exemple curl
+    
+    ```bash
+    curl -X POST "https://votre-api.onrender.com/predict" \
+         -H "Content-Type: application/json" \
+         -d '{"features": {"AMT_INCOME_TOTAL": 150000, "EXT_SOURCE_1": 0.5}}'
+    ```
+    
+    ## Réponse
+    
+    Retourne la probabilité de défaut, la décision (ACCEPTÉ/REFUSÉ) et la catégorie de risque.
     """
+    # === LOGS DEBUG ===
+    print(f"[API /predict] Requête reçue")
+    print(f"[API /predict] request.features = {request.features is not None}")
+    print(f"[API /predict] request.data = {request.data is not None}")
+    
     used_model = model_dep or model
     used_preprocessor = preprocessor_dep or preprocessor
 
     if used_model is None:
+        print("[API /predict] ERREUR: Modèle non chargé")
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
         # Extraire les features du request (supporte 'features' ou 'data')
         client_dict = request.get_features_dict()
+        print(f"[API /predict] Features extraites: {len(client_dict)} champs")
+        print(f"[API /predict] Clés: {list(client_dict.keys())[:5]}...")
 
         # Vérifier que le payload contient des données
         if not isinstance(client_dict, dict) or not client_dict:
+            print("[API /predict] ERREUR: Payload vide")
             raise HTTPException(status_code=400, detail="Payload invalide: features ou data manquantes")
 
         df = pd.DataFrame([client_dict])
