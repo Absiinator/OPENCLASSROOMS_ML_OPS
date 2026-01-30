@@ -245,7 +245,7 @@ async def predict(
     
     try:
         # Extraire les features du request (supporte 'features' ou 'data')
-        client_dict = request.get_features
+        client_dict = request.get_features_dict()
 
         # Vérifier que le payload contient des données
         if not isinstance(client_dict, dict) or not client_dict:
@@ -396,7 +396,7 @@ async def explain_prediction(
     
     try:
         # Extraire les features (supporte 'features' ou 'data')
-        client_dict = request.get_features
+        client_dict = request.get_features_dict()
 
         # Vérifier que le payload contient des données
         if not isinstance(client_dict, dict) or not client_dict:

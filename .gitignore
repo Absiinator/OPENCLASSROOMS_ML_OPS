@@ -95,6 +95,10 @@ mlruns/
 !notebooks/mlruns/
 !notebooks/mlruns/**
 
+# Exclure les fichiers .trash de MLflow (corbeille interne)
+notebooks/mlruns/.trash/
+**/.trash/
+
 # Ignorer les artefacts MLflow lourds
 mlartifacts/
 

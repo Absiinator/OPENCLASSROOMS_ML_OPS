@@ -29,11 +29,14 @@ RUN mkdir -p /app/mlruns
 # Le dossier mlruns/ à la racine contient un doublon qu'on ignore
 COPY notebooks/mlruns/. /app/mlruns/
 
-# Nettoyer les fichiers .trash et corriger les chemins artifact_location
+# Nettoyer les fichiers .trash et corriger les chemins absolus pour Docker
 RUN echo "🔧 Nettoyage et configuration MLflow..." && \
     rm -rf /app/mlruns/.trash 2>/dev/null || true && \
-    # Corriger les chemins artifact_location dans les meta.yaml
-    find /app/mlruns -name "meta.yaml" -type f -exec sed -i 's|artifact_location:.*|artifact_location: /app/mlruns|g' {} \; 2>/dev/null || true && \
+    # Corriger artifact_location dans meta.yaml des expériences
+    find /app/mlruns -maxdepth 2 -name "meta.yaml" -type f -exec sed -i 's|artifact_location:.*|artifact_location: /app/mlruns|g' {} \; 2>/dev/null || true && \
+    # Corriger artifact_uri dans meta.yaml des runs (chemins locaux -> Docker)
+    find /app/mlruns -name "meta.yaml" -type f -exec sed -i 's|artifact_uri:.*home-credit-scoring/notebooks/mlruns/|artifact_uri: /app/mlruns/|g' {} \; 2>/dev/null || true && \
+    find /app/mlruns -name "meta.yaml" -type f -exec sed -i 's|artifact_uri:.*Lepage_Jeffrey.*mlruns/|artifact_uri: /app/mlruns/|g' {} \; 2>/dev/null || true && \
     # Afficher le contenu pour debug
     echo "=== Experiments trouvés ===" && \
     find /app/mlruns -maxdepth 2 -name "meta.yaml" -exec dirname {} \; 2>/dev/null && \

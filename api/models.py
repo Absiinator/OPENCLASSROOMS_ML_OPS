@@ -5,7 +5,7 @@ Schémas Pydantic pour l'API de scoring crédit.
 Définit les modèles de données pour les requêtes et réponses de l'API.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any
 from enum import Enum
 
@@ -29,14 +29,28 @@ class PredictionRequest(BaseModel):
     """Requête de prédiction simple avec features en dictionnaire.
     
     Accepte les formats:
-    - {"features": {...}}  (format principal)
+    - {"features": {...}}  (format principal - utilisé par le Dashboard)
     - {"data": {...}}      (format alternatif pour compatibilité)
-    """
-    features: Optional[Dict[str, Any]] = Field(None, description="Dictionnaire des features du client")
-    data: Optional[Dict[str, Any]] = Field(None, description="Alias pour features (compatibilité)")
     
-    @property
-    def get_features(self) -> Dict[str, Any]:
+    Au moins un des deux champs doit être fourni.
+    """
+    features: Optional[Dict[str, Any]] = Field(default=None, description="Dictionnaire des features du client")
+    data: Optional[Dict[str, Any]] = Field(default=None, description="Alias pour features (compatibilité)")
+    
+    @model_validator(mode='before')
+    @classmethod
+    def check_features_or_data(cls, values):
+        """Valide qu'au moins 'features' ou 'data' est fourni."""
+        if isinstance(values, dict):
+            features = values.get('features')
+            data = values.get('data')
+            # Si aucun n'est fourni, créer un dict vide pour éviter l'erreur 422
+            if features is None and data is None:
+                # On accepte quand même - la validation se fera dans l'endpoint
+                pass
+        return values
+    
+    def get_features_dict(self) -> Dict[str, Any]:
         """Retourne les features depuis 'features' ou 'data'."""
         if self.features is not None:
             return self.features

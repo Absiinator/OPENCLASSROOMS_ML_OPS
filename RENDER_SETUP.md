@@ -62,16 +62,21 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
 - Les **données sont téléchargées automatiquement** lors du build Docker depuis le bucket S3 OpenClassrooms (~500MB)
 - Le build Docker prend environ 5-10 minutes supplémentaires pour le téléchargement
 - **MLflow** : Les runs du dossier `mlruns/` local sont copiés dans l'image Docker lors du build GitHub Actions. Ils sont accessibles en lecture seule sur Render. Pour persister de nouvelles expériences en production, un backend S3 serait nécessaire (option payante non couverte).
+
 ### Résumé des variables d'environnement par service
 
-| Service | Variable | Valeur par défaut | À configurer sur Render |
-|---------|----------|-------------------|-------------------------|
-| **API** | `PORT` | 8000 | Automatique (Render) |
-| **API** | `HOST` | 0.0.0.0 | ✅ Optionnel |
-| **Dashboard** | `PORT` | 8501 | Automatique (Render) |
-| **Dashboard** | `API_URL` | http://localhost:8000 | ✅ **Obligatoire** : `https://votre-api.onrender.com` |
-| **Dashboard** | `MLFLOW_URL` | http://localhost:5000 | ✅ **Obligatoire** : `https://votre-mlflow.onrender.com` |
-| **MLflow** | `PORT` | 5000 | Automatique (Render) |
+| Service | Variable | Valeur par défaut (Dockerfile) | Configurer sur Render ? |
+|---------|----------|-------------------------------|------------------------|
+| **API** | `PORT` | 8000 | ❌ Non (Render le définit automatiquement) |
+| **API** | `HOST` | 0.0.0.0 | ❌ Non (défini dans Dockerfile) |
+| **Dashboard** | `PORT` | 8501 | ❌ Non (Render le définit automatiquement) |
+| **Dashboard** | `API_URL` | http://localhost:8000 | ✅ **OUI - OBLIGATOIRE** : `https://votre-api.onrender.com` |
+| **Dashboard** | `MLFLOW_URL` | http://localhost:5000 | ✅ **OUI - OBLIGATOIRE** : `https://votre-mlflow.onrender.com` |
+| **MLflow** | `PORT` | 5000 | ❌ Non (Render le définit automatiquement) |
+| **MLflow** | `MLFLOW_TRACKING_URI` | /app/mlruns | ❌ Non (défini dans Dockerfile) |
+
+> 💡 **Important** : Seules `API_URL` et `MLFLOW_URL` du Dashboard nécessitent une configuration manuelle sur Render.
+
 ---
 
 ## �🚀 Étape 1 : Configuration API sur Render
@@ -94,7 +99,7 @@ ghcr.io/absiinator/openclassrooms-ml-ops-api:latest
 - **Region** : Europe (Frankfurt) ou proche de vous
 - **Instance Type** : **Free** (pour commencer)
 
-### 1.3 Variables d'environnement (optionnel pour l'API)
+### 1.4 Variables d'environnement (optionnel pour l'API)
 
 Ajoutez ces variables si nécessaire :
 ```bash
@@ -102,28 +107,13 @@ PORT=8000
 HOST=0.0.0.0
 ```
 
-### 1.4 Récupérer l'API Key pour le déploiement automatique
-
-1. Allez dans **Account Settings** (icône utilisateur en haut à droite)
-2. Cliquez sur **"API Keys"** dans le menu gauche
-3. Cliquez sur **"Create API Key"**
-4. Donnez un nom : `GitHub Actions Deploy`
-5. **COPIEZ LA CLÉ** (vous ne la reverrez plus !)
-
-### 1.5 Récupérer le Service ID
-
-1. Ouvrez votre service API créé
-2. Dans l'URL, copiez l'ID (exemple : `srv-xxxxxxxxxxxxx`)
-   ```
-   https://dashboard.render.com/web/srv-xxxxxxxxxxxxx
-                                      ^^^^^^^^^^^^^^^^
-   ```
+> ⚠️ **Note** : Sur Render, `PORT` est défini automatiquement. Vous n'avez généralement pas besoin de le configurer manuellement.
 
 ## 🎨 Étape 2 : Configuration Dashboard sur Render
 
 ### 2.1 Créer un nouveau Web Service
 
-Répétez les étapes 1.1 à 1.3 avec ces paramètres :
+Répétez les étapes 1.1 et 1.2 avec ces paramètres :
 
 **Image URL** :
 ```
@@ -137,25 +127,16 @@ ghcr.io/absiinator/openclassrooms-ml-ops-dashboard:latest
 
 ### 2.2 Variables d'environnement Dashboard
 
-**Obligatoire** - Ajoutez ces variables :
+**✅ OBLIGATOIRE** - Ajoutez ces variables dans Render :
 ```bash
 API_URL=https://home-credit-api.onrender.com
 MLFLOW_URL=https://home-credit-mlflow.onrender.com
 ```
 
-**Optionnel** - Configuration Streamlit (déjà définies dans le Dockerfile) :
-```bash
-STREAMLIT_SERVER_PORT=8501
-STREAMLIT_SERVER_ADDRESS=0.0.0.0
-```
-
-⚠️ **Important** : 
-- Remplacez `home-credit-api.onrender.com` par l'URL réelle de votre API
-- Vous ajouterez `MLFLOW_URL` après avoir créé le service MLflow (étape 2b)
-
-### 2.3 Récupérer le Service ID Dashboard
-
-Même procédure que 1.5, copiez le Service ID du Dashboard.
+> ⚠️ **Important** : 
+> - Remplacez `home-credit-api.onrender.com` par l'URL réelle de votre API
+> - Remplacez `home-credit-mlflow.onrender.com` par l'URL réelle de votre MLflow (à configurer à l'étape 2b)
+> - Ces variables sont **obligatoires** - le Dashboard ne fonctionnera pas sans elles
 
 ## � Étape 2b : Configuration MLflow sur Render
 
@@ -184,18 +165,18 @@ ghcr.io/absiinator/openclassrooms-ml-ops-mlflow:latest
 | **Port** | 5000 (ou `$PORT`) |
 
 ⚠️ **Important - Optimisations appliquées** :
-- Le Dockerfile est configuré avec **1 worker** au lieu de 4 par défaut
-- Timeout augmenté à **120 secondes** pour éviter les crashs
-- Dépendances minimales (pas de boto3/psycopg2) pour économiser la RAM
-- Si vous voyez des erreurs "WORKER TIMEOUT" au démarrage, c'est normal - attendez 1-2 minutes que le service se stabilise
+- Le Dockerfile utilise le **serveur MLflow intégré** (plus léger que gunicorn)
+- Les chemins `artifact_location` et `artifact_uri` sont automatiquement corrigés pour Docker
+- Dépendances minimales pour économiser la RAM
+- Le premier démarrage peut prendre 30-60 secondes
 
-### 2b.3 Récupérer le Service ID MLflow
+### 2b.3 Variables d'environnement MLflow
 
-Même procédure que pour l'API et le Dashboard.
+Sur Render, aucune variable n'est nécessaire - `PORT` est défini automatiquement.
 
 ### 2b.4 Ajouter MLFLOW_URL au Dashboard
 
-**Important** : Retournez au service Dashboard créé à l'étape 2 et ajoutez cette variable d'environnement :
+**✅ IMPORTANT** : Retournez au service Dashboard créé à l'étape 2 et ajoutez/mettez à jour cette variable d'environnement :
 
 ```bash
 MLFLOW_URL=https://home-credit-mlflow.onrender.com
@@ -203,7 +184,7 @@ MLFLOW_URL=https://home-credit-mlflow.onrender.com
 
 ⚠️ Remplacez par l'URL réelle de votre service MLflow sur Render.
 
-## 🔐 Étape 3 : Configuration GitHub (Optionnel)
+## 🔐 Étape 3 : Configuration GitHub
 
 ### 3.1 Workflow CI/CD Simplifié
 
@@ -213,27 +194,28 @@ Le workflow GitHub Actions actuel :
 3. **Déploiement** : **MANUEL** sur Render (cliquez "Manual Deploy")
 
 ⚠️ **Note importante** :
-- **En local** (avec `python run.py ...`), aucune variable secrète n'est requise.
-- **Sur Render ou tout environnement distant**, les secrets GitHub sont **OBLIGATOIRES** pour que le déploiement fonctionne correctement (API, Dashboard, MLflow).
+- Le workflow CI/CD **ne nécessite AUCUN secret** (le déploiement est manuel)
+- Le seul secret utilisé est `GITHUB_TOKEN` (fourni automatiquement par GitHub)
+- Les images Docker sont poussées vers GHCR (GitHub Container Registry) automatiquement
 
-### 3.2 Secrets GitHub (**Obligatoires pour Render**)
+### 3.2 Variables GitHub (Optionnelles)
 
-Pour tout déploiement sur Render (ou tout environnement non local), ajoutez ces secrets dans GitHub :
+Si vous souhaitez référencer vos URLs dans des workflows futurs, ajoutez ces **variables** (pas des secrets) :
 
 1. Allez sur votre repo GitHub
 2. **Settings** → **Secrets and variables** → **Actions**
-3. Cliquez sur **"New repository secret"**
+3. Cliquez sur l'onglet **"Variables"**
+4. Cliquez sur **"New repository variable"**
 
-**Secrets à ajouter (OBLIGATOIRES pour Render)** :
+**Variables optionnelles** :
 
-| Nom | Valeur | Description | Nécessaire ? |
-|-----|--------|-------------|-------------|
-| `RENDER_API_KEY` | Votre clé API Render | Clé copiée à l'étape 1.4 | ✅ Oui (déploiement Render) |
-| `RENDER_SERVICE_API` | `srv-xxxxxxxxxxxxx` | Service ID de l'API (étape 1.5) | ✅ Oui (déploiement Render) |
-| `RENDER_SERVICE_DASHBOARD` | `srv-xxxxxxxxxxxxx` | Service ID du Dashboard (étape 2.3) | ✅ Oui (déploiement Render) |
-| `RENDER_SERVICE_MLFLOW` | `srv-xxxxxxxxxxxxx` | Service ID de MLflow (étape 2b.3) | ✅ Oui (déploiement Render) |
+| Nom | Valeur | Description |
+|-----|--------|-------------|
+| `RENDER_API_URL` | `https://votre-api.onrender.com` | URL de l'API déployée |
+| `RENDER_DASHBOARD_URL` | `https://votre-dashboard.onrender.com` | URL du Dashboard déployé |
+| `RENDER_MLFLOW_URL` | `https://votre-mlflow.onrender.com` | URL de MLflow déployé |
 
-> 💡 **Astuce** : Les secrets sont uniquement optionnels si vous testez tout en local avec `run.py`. Pour tout déploiement sur Render, ils sont impératifs.
+> 💡 **Ces variables ne sont PAS nécessaires** pour le déploiement manuel actuel. Elles sont utiles uniquement si vous ajoutez des tests d'intégration ou des notifications post-déploiement.
 
 ## ✅ Étape 4 : Déploiement et Test
 
@@ -311,21 +293,28 @@ https://home-credit-mlflow.onrender.com
 https://home-credit-api.onrender.com/docs
 ```
 
-## 🔗 Variables d'environnement GitHub
+## 🔗 Récapitulatif des Variables d'Environnement
 
-Pour que les URLs soient disponibles comme variables d'environnement dans les workflows CI/CD, ajoutez-les comme **variables** (pas secrets) dans GitHub :
+### Variables à configurer sur Render
 
-1. Allez dans **Settings** → **Secrets and variables** → **Actions**
-2. Cliquez sur l'onglet **"Variables"**
-3. Ajoutez les variables suivantes :
+| Service | Variable | Valeur | Obligatoire ? |
+|---------|----------|--------|---------------|
+| **API** | `PORT` | Défini automatiquement par Render | ❌ Non |
+| **API** | `HOST` | `0.0.0.0` | ❌ Non (défini dans Dockerfile) |
+| **Dashboard** | `PORT` | Défini automatiquement par Render | ❌ Non |
+| **Dashboard** | `API_URL` | `https://votre-api.onrender.com` | ✅ **OUI** |
+| **Dashboard** | `MLFLOW_URL` | `https://votre-mlflow.onrender.com` | ✅ **OUI** |
+| **MLflow** | `PORT` | Défini automatiquement par Render | ❌ Non |
 
-| Nom | Valeur |
-|-----|--------|
-| `RENDER_API_URL` | `https://home-credit-api.onrender.com` |
-| `RENDER_DASHBOARD_URL` | `https://home-credit-dashboard.onrender.com` |
-| `RENDER_MLFLOW_URL` | `https://home-credit-mlflow.onrender.com` |
+### Variables GitHub (Optionnelles)
 
-Ces variables peuvent ensuite être utilisées dans les workflows avec `${{ vars.RENDER_API_URL }}`.
+Ces variables ne sont **pas nécessaires** pour le déploiement actuel (déploiement manuel).
+
+| Nom | Valeur | Usage |
+|-----|--------|-------|
+| `RENDER_API_URL` | `https://votre-api.onrender.com` | Tests d'intégration (futurs) |
+| `RENDER_DASHBOARD_URL` | `https://votre-dashboard.onrender.com` | Tests d'intégration (futurs) |
+| `RENDER_MLFLOW_URL` | `https://votre-mlflow.onrender.com` | Tests d'intégration (futurs) |
 
 ## 📝 Notes Importantes
 
@@ -341,14 +330,14 @@ Ces variables peuvent ensuite être utilisées dans les workflows avec `${{ vars
 graph LR
     A[Push sur main] --> B[CI Tests]
     B --> C{Tests OK?}
-    C -->|🚀 Oui| D[CD: Build Docker Images]
+    C -->|Oui| D[CD: Build Docker Images]
     D --> E[Push vers GHCR]
     E --> F[Images prêtes sur GHCR]
     F --> G[Manual Deploy sur Render]
     G --> H[API déployée]
     G --> I[Dashboard déployé]
     G --> J[MLflow déployé]
-    C -->|❌ Non| K[Arrêt - Pas de build]
+    C -->|Non| K[Arrêt - Pas de build]
 ```
 
 **Étapes** :
@@ -384,21 +373,34 @@ graph LR
 
 ## ✅ Checklist Finale
 
+### Étape 1 : Configuration des Services Render
 - [ ] Compte Render créé
-- [ ] Web Service API créé (Image: `ghcr.io/username/openclassrooms-ml-ops-api:latest`)
-- [ ] Web Service Dashboard créé (Image: `ghcr.io/username/openclassrooms-ml-ops-dashboard:latest`)
-- [ ] Web Service MLflow créé (Image: `ghcr.io/username/openclassrooms-ml-ops-mlflow:latest`)
-- [ ] Variables d'env configurées sur chaque service Render (`API_URL`, `MLFLOW_URL` pour Dashboard)
-- [ ] (Optionnel) API Key Render générée et Service IDs copiés
-- [ ] (Optionnel) Secrets GitHub configurés (si déploiement automatique souhaité - non actif actuellement)
-- [ ] (Optionnel) Variables GitHub configurées (URLs de déploiement)
-- [ ] Premier déploiement manuel réussi (clic "Manual Deploy")
-- [ ] API répond sur `/health` (modèles chargés)
-- [ ] Dashboard accessible avec statistiques descriptives dans la sidebar
-- [ ] MLflow UI accessible
-- [ ] Workflow CI/CD testé (push → tests → build images → GHCR)
-- [ ] Processus de déploiement manuel testé
-- [ ] URLs finales documentées
+- [ ] **API** : Web Service créé avec image `ghcr.io/votre-username/openclassrooms-ml-ops-api:latest`
+- [ ] **Dashboard** : Web Service créé avec image `ghcr.io/votre-username/openclassrooms-ml-ops-dashboard:latest`
+- [ ] **MLflow** : Web Service créé avec image `ghcr.io/votre-username/openclassrooms-ml-ops-mlflow:latest`
+
+### Étape 2 : Variables d'Environnement
+- [ ] **Dashboard** : Variable `API_URL` configurée (ex: `https://votre-api.onrender.com`)
+- [ ] **Dashboard** : Variable `MLFLOW_URL` configurée (ex: `https://votre-mlflow.onrender.com`)
+- [ ] Variables vérifiées (pas de typo, URLs correctes avec `https://`)
+
+### Étape 3 : Premier Déploiement
+- [ ] Premier déploiement manuel réussi pour les 3 services (clic "Manual Deploy")
+- [ ] API répond sur `/health` avec `"status": "healthy"` et `"model_loaded": true`
+- [ ] Dashboard accessible et affiche les statistiques dans la sidebar
+- [ ] MLflow UI accessible et affiche les expériences
+
+### Étape 4 : Tests Fonctionnels
+- [ ] Test prédiction depuis Dashboard : client test → score affiché
+- [ ] Vérification sidebar Dashboard : infos modèle (seuil) et stats dataset visibles
+- [ ] MLflow : expériences "home-credit-scoring" visibles avec runs
+
+### Étape 5 : Workflow CI/CD
+- [ ] Push sur `main` → workflow CI/CD se lance automatiquement
+- [ ] Tests passent ✅
+- [ ] Images Docker buildées et poussées vers GHCR ✅
+- [ ] "Manual Deploy" effectué sur Render après le build
+- [ ] Services redéployés avec succès
 
 **Félicitations ! Votre pipeline CI/CD avec déploiement manuel sur Render est opérationnel ! 🎉**
 
