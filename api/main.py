@@ -44,6 +44,9 @@ from api.models import (
     Decision
 )
 
+# Import preprocessing functions
+from src.preprocessing import create_application_features
+
 # Configuration
 API_VERSION = "1.0.0"
 MODEL_DIR = Path(__file__).parent.parent / "models"
@@ -208,7 +211,16 @@ async def root():
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check(model_dep = Depends(get_model)):
-    """Vérification de l'état de l'API."""
+    """
+    Vérification de l'état de l'API.
+    
+    Retourne :
+    - status : "healthy" (modèle chargé) ou "degraded" (modèle indisponible)
+    - model_loaded : True si le modèle LightGBM et le préprocesseur sont chargés
+    - version : Version de l'API
+    
+    Utilisé par Render pour les health checks et les redémarrages automatiques.
+    """
     used_model = model_dep or model
     return HealthResponse(
         status="healthy" if used_model is not None else "degraded",
@@ -219,7 +231,18 @@ async def health_check(model_dep = Depends(get_model)):
 
 @app.get("/model/info", response_model=ModelInfo, tags=["Model"])
 async def model_info_endpoint(info: dict = Depends(get_model_info)):
-    """Obtenir les informations sur le modèle déployé (dépendance overrideable)."""
+    """
+    Obtenir les informations sur le modèle déployé.
+    
+    Retourne :
+    - model_name : Nom du modèle (home_credit_model)
+    - version : Version du modèle
+    - optimal_threshold : Seuil de décision optimisé (0.44)
+    - cost_fn : Coût d'un Faux Négatif (10)
+    - cost_fp : Coût d'un Faux Positif (1)
+    - n_features : Nombre de features engineered (245)
+    - training_date : Date d'entraînement du modèle
+    """
     return ModelInfo(
         model_name=info.get('model_name', 'home_credit_model'),
         version=info.get('model_version', API_VERSION),
@@ -241,9 +264,23 @@ async def predict(
     """
     Prédit la probabilité de défaut pour un client.
     
-    ## Format de requête
+    ## Pipeline de Traitement Automatique
     
-    Accepte deux formats équivalents:
+    Accepte **17 features brutes** → Transforme en **245 features engineered** → LightGBM
+    
+    1️⃣ **Feature Engineering** : Ratios, moyennes, conversions temporelles
+    2️⃣ **Prétraitement** : Encodage catégorielles, imputation NaN (médiane), scaling
+    3️⃣ **Prédiction** : LightGBM.predict_proba()
+    
+    ## 17 Features Requises
+    
+    **Finances** : `AMT_INCOME_TOTAL`, `AMT_CREDIT`, `AMT_ANNUITY`, `AMT_GOODS_PRICE`
+    **Temporel** : `DAYS_BIRTH`, `DAYS_EMPLOYED` (négatif, en jours)
+    **Personnel** : `CNT_CHILDREN`, `CODE_GENDER_M`, `FLAG_OWN_CAR`, `FLAG_OWN_REALTY`
+    **Scores** : `EXT_SOURCE_1`, `EXT_SOURCE_2`, `EXT_SOURCE_3`, `REGION_RATING_CLIENT`
+    **Ratios** : `CREDIT_INCOME_RATIO`, `ANNUITY_INCOME_RATIO`, `EXT_SOURCE_MEAN`
+    
+    ## Format de requête (flexible)
     
     **Format 1 (recommandé):**
     ```json
@@ -269,22 +306,26 @@ async def predict(
     }
     ```
     
+    **Note** : L'API accepte les 17 features + colonnes supplémentaires (ignorées)
+    
     ## Exemple curl
     
     ```bash
-    curl -X POST "https://votre-api.onrender.com/predict" \
-         -H "Content-Type: application/json" \
-         -d '{"features": {"AMT_INCOME_TOTAL": 150000, "EXT_SOURCE_1": 0.5}}'
+    curl -X POST "https://votre-api.onrender.com/predict" \\
+         -H "Content-Type: application/json" \\
+         -d '{"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, "EXT_SOURCE_1": 0.5}}'
     ```
     
     ## Réponse
     
-    Retourne la probabilité de défaut, la décision (ACCEPTÉ/REFUSÉ) et la catégorie de risque.
+    - `probability` : Probabilité de défaut [0-1]
+    - `decision` : ACCEPTED si probability < seuil, REFUSED sinon
+    - `risk_category` : very_low, low, medium, high, very_high
+    - `threshold` : Seuil utilisé (défaut: 0.44)
     """
     # === LOGS DEBUG ===
     print(f"[API /predict] Requête reçue")
-    print(f"[API /predict] request.features = {request.features is not None}")
-    print(f"[API /predict] request.data = {request.data is not None}")
+    print(f"[API /predict] Type de requête: {type(request)}")
     
     used_model = model_dep or model
     used_preprocessor = preprocessor_dep or preprocessor
@@ -294,7 +335,7 @@ async def predict(
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        # Extraire les features du request (supporte 'features' ou 'data')
+        # Extraire les features du request (supporte 'features', 'data' ou format plat)
         client_dict = request.get_features_dict()
         print(f"[API /predict] Features extraites: {len(client_dict)} champs")
         print(f"[API /predict] Clés: {list(client_dict.keys())[:5]}...")
@@ -306,11 +347,23 @@ async def predict(
 
         df = pd.DataFrame([client_dict])
         
-        # Prétraitement
+        # 1️⃣ Appliquer feature engineering (crée ratios, moyennes, etc.)
+        print("[API /predict] Application du feature engineering...")
+        try:
+            df = create_application_features(df)
+            print(f"[API /predict] Features après FE: {len(df.columns)} colonnes")
+        except Exception as e:
+            print(f"[API /predict] ⚠️ Feature engineering failed: {e}")
+            # Continue sans FE si erreur
+        
+        # 2️⃣ Prétraitement (encoding, imputation, scaling)
         if used_preprocessor is not None:
+            print("[API /predict] Transformation avec le préprocesseur...")
             X = used_preprocessor.transform(df)
+            print(f"[API /predict] Shape après transform: {X.shape}")
         else:
             # fallback: pass raw values
+            print("[API /predict] ⚠️ Pas de préprocesseur disponible")
             X = df.values
 
         # Prédiction
@@ -346,12 +399,27 @@ async def predict_batch(
     preprocessor_dep = Depends(get_preprocessor)
 ):
     """
-    Prédit la probabilité de défaut pour plusieurs clients.
+    Prédit la probabilité de défaut pour plusieurs clients (batch).
     
-    - **clients**: Liste des données clients
-    - **threshold**: Seuil personnalisé (optionnel)
+    **Pipeline identique au /predict** : 17 features → 245 features → Prédictions
     
-    Retourne les prédictions pour chaque client et un résumé.
+    ## Format de requête
+    
+    ```json
+    {
+        "clients": [
+            {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, ...},
+            {"AMT_INCOME_TOTAL": 200000, "AMT_CREDIT": 600000, ...}
+        ],
+        "threshold": 0.44
+    }
+    ```
+    
+    ## Réponse
+    
+    Liste des prédictions + résumé (nombre approuvés/refusés, taux de risque moyen)
+    
+    **Limite** : Maximum 1000 clients par requête
     """
     used_model = model_dep or model
     used_preprocessor = preprocessor_dep or preprocessor
@@ -381,10 +449,22 @@ async def predict_batch(
 
         df = pd.DataFrame(clients_data)
 
-        # Prétraitement
+        # 1️⃣ Appliquer feature engineering (crée ratios, moyennes, etc.)
+        print(f"[API /predict/batch] Batch de {len(df)} clients - Feature engineering...")
+        try:
+            df = create_application_features(df)
+            print(f"[API /predict/batch] Features après FE: {len(df.columns)} colonnes")
+        except Exception as e:
+            print(f"[API /predict/batch] ⚠️ Feature engineering failed: {e}")
+            # Continue sans FE si erreur
+        
+        # 2️⃣ Prétraitement (encoding, imputation, scaling)
         if used_preprocessor is not None:
+            print("[API /predict/batch] Transformation avec le préprocesseur...")
             X = used_preprocessor.transform(df)
+            print(f"[API /predict/batch] Shape après transform: {X.shape}")
         else:
+            print("[API /predict/batch] ⚠️ Pas de préprocesseur disponible")
             X = df.values
 
         # Prédictions

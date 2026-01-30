@@ -265,6 +265,33 @@ Le projet utilise les données du challenge Kaggle [Home Credit Default Risk](ht
 | `credit_card_balance.csv` | Historique des cartes de crédit |
 | `installments_payments.csv` | Historique des paiements |
 
+### Pipeline de Traitement des Données
+
+Le modèle a été entraîné sur **245+ features engineered**, mais l'API accepte des requêtes avec seulement **17 features brutes**. La transformation est **automatique** :
+
+```
+Dashboard/API (17 features)
+    ↓
+create_application_features()  [ratios, moyennes, conversions]
+    ↓
+CreditScoringPreprocessor.transform() [imputation, encoding]
+    ↓
+LightGBM Model (245 features)
+```
+
+**17 Features requises :**
+- **Finances** : `AMT_INCOME_TOTAL`, `AMT_CREDIT`, `AMT_ANNUITY`, `AMT_GOODS_PRICE`
+- **Temporel** : `DAYS_BIRTH`, `DAYS_EMPLOYED`
+- **Personnel** : `CNT_CHILDREN`, `CODE_GENDER_M`, `FLAG_OWN_CAR`, `FLAG_OWN_REALTY`
+- **Scores** : `EXT_SOURCE_1`, `EXT_SOURCE_2`, `EXT_SOURCE_3`, `REGION_RATING_CLIENT`
+- **Ratios** : `CREDIT_INCOME_RATIO`, `ANNUITY_INCOME_RATIO`, `EXT_SOURCE_MEAN`
+
+**Gestion automatique :**
+- ✅ Features engineered ajoutées dynamiquement
+- ✅ ~200 colonnes d'agrégation imputées avec la médiane apprises lors de l'entraînement
+- ✅ Encodage des catégorielles
+- ✅ Aucune configuration manuelle nécessaire
+
 ## 🧪 Tests
 
 ```bash
@@ -369,10 +396,10 @@ Si vous souhaitez automatiser le déploiement Render via l'API (non utilisé act
 ## 📖 Documentation API
 
 La documentation interactive est disponible via :
-- **Swagger UI** : `http://localhost:8000/docs`
-- **ReDoc** : `http://localhost:8000/redoc`
+- **Swagger UI** : `http://localhost:8000/docs` - Tests des endpoints directement
+- **ReDoc** : `http://localhost:8000/redoc` - Documentation complète
 
-### Exemple de requête
+### Exemple de requête (17 features minimal)
 
 ```bash
 curl -X POST "http://localhost:8000/predict" \
@@ -382,9 +409,20 @@ curl -X POST "http://localhost:8000/predict" \
       "AMT_INCOME_TOTAL": 150000,
       "AMT_CREDIT": 500000,
       "AMT_ANNUITY": 25000,
+      "AMT_GOODS_PRICE": 500000,
+      "DAYS_BIRTH": -12000,
+      "DAYS_EMPLOYED": -5000,
+      "CNT_CHILDREN": 1,
+      "CODE_GENDER_M": 1,
+      "FLAG_OWN_CAR": 1,
+      "FLAG_OWN_REALTY": 1,
       "EXT_SOURCE_1": 0.5,
       "EXT_SOURCE_2": 0.6,
-      "EXT_SOURCE_3": 0.55
+      "EXT_SOURCE_3": 0.55,
+      "REGION_RATING_CLIENT": 2,
+      "CREDIT_INCOME_RATIO": 3.33,
+      "ANNUITY_INCOME_RATIO": 0.167,
+      "EXT_SOURCE_MEAN": 0.55
     }
   }'
 ```
@@ -393,13 +431,22 @@ curl -X POST "http://localhost:8000/predict" \
 
 ```json
 {
+  "client_id": null,
   "probability": 0.23,
   "prediction": 0,
-  "decision": "approved",
-  "threshold": 0.35,
-  "confidence": "high"
+  "decision": "ACCEPTED",
+  "risk_category": "low",
+  "threshold": 0.44
 }
 ```
+
+### Notes importantes
+
+- ✅ **L'API accepte 17+ features** - Toutes les colonnes supplémentaires sont ignorées (mode `extra="allow"`)
+- ✅ **Colonnes manquantes comblées automatiquement** - Les ~200 colonnes d'agrégation sont imputées avec la médiane
+- ✅ **Feature engineering automatique** - Ratios, moyennes et conversions créés automatiquement
+- ✅ **Format du JSON flexible** - Accepte `{"features": {...}}`, `{"data": {...}}` ou format plat
+- ⚠️ **Seuil par défaut : 0.44** - Optimisé pour minimiser le coût métier (FN=10, FP=1)
 
 ## 🤝 Contribution
 

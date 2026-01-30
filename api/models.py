@@ -28,9 +28,12 @@ class Decision(str, Enum):
 class PredictionRequest(BaseModel):
     """Requête de prédiction simple avec features en dictionnaire.
     
-    Accepte les formats:
+    ACCEPTE TOUS LES FORMATS - très flexible pour compatibilité maximale.
+    
+    Formats acceptés:
     - {"features": {...}}  (format principal - utilisé par le Dashboard Streamlit)
     - {"data": {...}}      (format alternatif pour compatibilité)
+    - Dictionnaire plat avec les features directement à la racine
     
     Exemple de requête curl:
     ```bash
@@ -39,19 +42,10 @@ class PredictionRequest(BaseModel):
          -d '{"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, "EXT_SOURCE_1": 0.5}}'
     ```
     """
-    # Les deux champs sont optionnels - on accepte l'un OU l'autre
-    features: Optional[Dict[str, Any]] = Field(
-        default=None, 
-        description="Dictionnaire des features du client (format principal)"
-    )
-    data: Optional[Dict[str, Any]] = Field(
-        default=None, 
-        description="Alias pour features (compatibilité avec anciens clients)"
-    )
-    
-    # Configuration pour accepter des champs supplémentaires sans erreur
+    # Accepter n'importe quoi - pas de validation stricte Pydantic pour éviter les erreurs 422
+    # Le modèle stocke le payload brut qui sera traité dans l'endpoint
     model_config = {
-        "extra": "ignore",  # Ignorer les champs supplémentaires
+        "extra": "allow",  # Accepter TOUS les champs supplémentaires
         "json_schema_extra": {
             "examples": [
                 {
@@ -88,29 +82,33 @@ class PredictionRequest(BaseModel):
         }
     }
     
-    @model_validator(mode='before')
-    @classmethod
-    def normalize_input(cls, values):
-        """Normalise l'entrée pour accepter features ou data."""
-        if isinstance(values, dict):
-            # Log pour debug
-            print(f"[DEBUG] PredictionRequest reçu: {list(values.keys())}")
-            
-            # Si ni features ni data n'est fourni, vérifier si c'est un dict plat
-            if 'features' not in values and 'data' not in values:
-                # Peut-être que les features sont directement à la racine
-                if any(k in values for k in ['AMT_INCOME_TOTAL', 'AMT_CREDIT', 'EXT_SOURCE_1']):
-                    print(f"[DEBUG] Format plat détecté, conversion en features")
-                    values = {'features': values}
-        return values
-    
     def get_features_dict(self) -> Dict[str, Any]:
-        """Retourne les features depuis 'features' ou 'data'."""
-        if self.features is not None:
-            return self.features
-        if self.data is not None:
-            return self.data
-        return {}
+        """Retourne les features depuis le payload reçu.
+        
+        Essaie les formats dans cet ordre:
+        1. Cherche un champ 'features'
+        2. Cherche un champ 'data'
+        3. Retourne tous les champs supplémentaires (format plat)
+        """
+        # En Pydantic V2 avec extra="allow", les champs supplémentaires sont dans __pydantic_extra__
+        extra_fields = getattr(self, '__pydantic_extra__', {}) or {}
+        
+        # Log pour debug
+        print(f"[API /predict] Payload reçu - champs supplémentaires: {list(extra_fields.keys())}")
+        
+        # Cas 1: Champ 'features' fourni
+        if 'features' in extra_fields and isinstance(extra_fields['features'], dict):
+            print(f"[API /predict] Format 'features' détecté avec {len(extra_fields['features'])} champs")
+            return extra_fields['features']
+        
+        # Cas 2: Champ 'data' fourni
+        if 'data' in extra_fields and isinstance(extra_fields['data'], dict):
+            print(f"[API /predict] Format 'data' détecté avec {len(extra_fields['data'])} champs")
+            return extra_fields['data']
+        
+        # Cas 3: Format plat - retourner tous les champs supplémentaires
+        print(f"[API /predict] Format plat détecté avec {len(extra_fields)} champs")
+        return extra_fields
 
 
 class ClientFeatures(BaseModel):

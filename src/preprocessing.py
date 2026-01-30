@@ -275,40 +275,59 @@ def create_application_features(df: pd.DataFrame) -> pd.DataFrame:
     - Ratios financiers
     - Conversion de jours en années
     - Indicateurs de risque
+    
+    Gère gracieusement les colonnes manquantes (pour l'inférence avec données limitées).
     """
     df = df.copy()
     
-    # Ratios financiers
-    df['CREDIT_INCOME_RATIO'] = df['AMT_CREDIT'] / (df['AMT_INCOME_TOTAL'] + 1)
-    df['ANNUITY_INCOME_RATIO'] = df['AMT_ANNUITY'] / (df['AMT_INCOME_TOTAL'] + 1)
-    df['CREDIT_GOODS_RATIO'] = df['AMT_CREDIT'] / (df['AMT_GOODS_PRICE'] + 1)
-    df['INCOME_PER_PERSON'] = df['AMT_INCOME_TOTAL'] / (df['CNT_FAM_MEMBERS'] + 1)
-    df['ANNUITY_LENGTH'] = df['AMT_CREDIT'] / (df['AMT_ANNUITY'] + 1)
+    # Ratios financiers - gère colonnes manquantes
+    if 'AMT_CREDIT' in df.columns and 'AMT_INCOME_TOTAL' in df.columns:
+        df['CREDIT_INCOME_RATIO'] = df['AMT_CREDIT'] / (df['AMT_INCOME_TOTAL'] + 1)
+    
+    if 'AMT_ANNUITY' in df.columns and 'AMT_INCOME_TOTAL' in df.columns:
+        df['ANNUITY_INCOME_RATIO'] = df['AMT_ANNUITY'] / (df['AMT_INCOME_TOTAL'] + 1)
+    
+    if 'AMT_CREDIT' in df.columns and 'AMT_GOODS_PRICE' in df.columns:
+        df['CREDIT_GOODS_RATIO'] = df['AMT_CREDIT'] / (df['AMT_GOODS_PRICE'] + 1)
+    
+    if 'AMT_INCOME_TOTAL' in df.columns and 'CNT_FAM_MEMBERS' in df.columns:
+        df['INCOME_PER_PERSON'] = df['AMT_INCOME_TOTAL'] / (df['CNT_FAM_MEMBERS'] + 1)
+    
+    if 'AMT_CREDIT' in df.columns and 'AMT_ANNUITY' in df.columns:
+        df['ANNUITY_LENGTH'] = df['AMT_CREDIT'] / (df['AMT_ANNUITY'] + 1)
     
     # Conversion jours en années (valeurs négatives = jours avant application)
-    df['AGE_YEARS'] = -df['DAYS_BIRTH'] / 365
-    df['EMPLOYED_YEARS'] = -df['DAYS_EMPLOYED'] / 365
-    df['EMPLOYED_YEARS'] = df['EMPLOYED_YEARS'].replace({365243 / 365: np.nan})  # Valeur anomalie
+    if 'DAYS_BIRTH' in df.columns:
+        df['AGE_YEARS'] = -df['DAYS_BIRTH'] / 365
+    
+    if 'DAYS_EMPLOYED' in df.columns:
+        df['EMPLOYED_YEARS'] = -df['DAYS_EMPLOYED'] / 365
+        df['EMPLOYED_YEARS'] = df['EMPLOYED_YEARS'].replace({365243 / 365: np.nan})  # Valeur anomalie
     
     # Ratio emploi/âge
-    df['EMPLOYED_TO_AGE_RATIO'] = df['EMPLOYED_YEARS'] / (df['AGE_YEARS'] + 1)
+    if 'EMPLOYED_YEARS' in df.columns and 'AGE_YEARS' in df.columns:
+        df['EMPLOYED_TO_AGE_RATIO'] = df['EMPLOYED_YEARS'] / (df['AGE_YEARS'] + 1)
     
     # Score externe moyen
     ext_cols = ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']
-    df['EXT_SOURCE_MEAN'] = df[ext_cols].mean(axis=1)
-    df['EXT_SOURCE_STD'] = df[ext_cols].std(axis=1)
-    df['EXT_SOURCE_MIN'] = df[ext_cols].min(axis=1)
-    df['EXT_SOURCE_MAX'] = df[ext_cols].max(axis=1)
+    ext_cols = [c for c in ext_cols if c in df.columns]
+    if ext_cols:
+        df['EXT_SOURCE_MEAN'] = df[ext_cols].mean(axis=1)
+        df['EXT_SOURCE_STD'] = df[ext_cols].std(axis=1)
+        df['EXT_SOURCE_MIN'] = df[ext_cols].min(axis=1)
+        df['EXT_SOURCE_MAX'] = df[ext_cols].max(axis=1)
     
     # Indicateurs de documents fournis
     doc_cols = [c for c in df.columns if c.startswith('FLAG_DOCUMENT')]
-    df['DOCUMENTS_COUNT'] = df[doc_cols].sum(axis=1)
+    if doc_cols:
+        df['DOCUMENTS_COUNT'] = df[doc_cols].sum(axis=1)
     
     # Indicateurs de contact
     contact_cols = ['FLAG_MOBIL', 'FLAG_EMP_PHONE', 'FLAG_WORK_PHONE', 
                    'FLAG_CONT_MOBILE', 'FLAG_PHONE', 'FLAG_EMAIL']
     contact_cols = [c for c in contact_cols if c in df.columns]
-    df['CONTACTS_COUNT'] = df[contact_cols].sum(axis=1)
+    if contact_cols:
+        df['CONTACTS_COUNT'] = df[contact_cols].sum(axis=1)
     
     return df
 
