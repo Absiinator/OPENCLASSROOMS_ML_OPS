@@ -2,7 +2,7 @@
 # Dockerfile - MLflow UI Server
 # =============================================================================
 # Image optimisée pour le tracking MLflow sur Render
-# Configuration légère pour tier gratuit (512MB RAM)
+# Configuration ultra-légère pour tier gratuit (512MB RAM)
 
 FROM python:3.10-slim
 
@@ -19,46 +19,31 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Installer MLflow (version légère pour tier gratuit)
+# Installer MLflow sans dépendances lourdes (version minimale pour UI)
 RUN pip install --no-cache-dir mlflow==2.9.2
 
-# Créer le répertoire pour les artefacts MLflow
-RUN mkdir -p /app/mlruns /app/notebooks_mlruns /app/mlruns_root
+# Créer le répertoire mlruns
+RUN mkdir -p /app/mlruns
 
-# Copier les runs MLflow depuis les 2 sources
-# 1. mlruns/ à la racine du projet (peut contenir des runs)
-COPY mlruns/. /app/mlruns_root/
+# IMPORTANT: On copie SEULEMENT notebooks/mlruns qui contient les vraies expériences
+# Le dossier mlruns/ à la racine contient un doublon qu'on ignore
+COPY notebooks/mlruns/. /app/mlruns/
 
-# 2. notebooks/mlruns/ qui contient les vrais runs d'expériences
-COPY notebooks/mlruns/. /app/notebooks_mlruns/
-
-# Fusionner les deux sources dans /app/mlruns (destination finale)
-RUN echo "📦 Copie des MLflow runs..." && \
-    echo "=== Contenu mlruns_root ===" && \
-    ls -la /app/mlruns_root/ && \
-    echo "=== Contenu notebooks_mlruns ===" && \
-    ls -la /app/notebooks_mlruns/ && \
-    echo "=== Fusion dans mlruns ===" && \
-    cp -rv /app/mlruns_root/* /app/mlruns/ 2>/dev/null || true && \
-    cp -rv /app/notebooks_mlruns/* /app/mlruns/ 2>/dev/null || true && \
-    rm -rf /app/notebooks_mlruns /app/mlruns_root && \
-    echo "✅ Fusion terminée" && \
-    echo "=== Contenu final mlruns ===" && \
-    ls -laR /app/mlruns/ | head -50 && \
-    echo "=== Recherche meta.yaml ===" && \
-    find /app/mlruns -name "meta.yaml" -type f 2>/dev/null | head -20 || echo "⚠️ Aucun meta.yaml trouvé"
+# Nettoyer les fichiers .trash et corriger les chemins artifact_location
+RUN echo "🔧 Nettoyage et configuration MLflow..." && \
+    rm -rf /app/mlruns/.trash 2>/dev/null || true && \
+    # Corriger les chemins artifact_location dans les meta.yaml
+    find /app/mlruns -name "meta.yaml" -type f -exec sed -i 's|artifact_location:.*|artifact_location: /app/mlruns|g' {} \; 2>/dev/null || true && \
+    # Afficher le contenu pour debug
+    echo "=== Experiments trouvés ===" && \
+    find /app/mlruns -maxdepth 2 -name "meta.yaml" -exec dirname {} \; 2>/dev/null && \
+    echo "=== Runs trouvés ===" && \
+    find /app/mlruns -maxdepth 3 -type d -name "[0-9a-f]*" 2>/dev/null | head -10 && \
+    echo "✅ MLflow configuré"
 
 # Exposer le port
 EXPOSE ${PORT}
 
-# Commande de démarrage du serveur MLflow
-# Configuration optimisée pour tier gratuit Render (512MB RAM):
-# - 1 worker au lieu de 4 par défaut
-# - Timeout élevé pour éviter les WORKER TIMEOUT
-CMD mlflow server \
-    --host 0.0.0.0 \
-    --port ${PORT} \
-    --backend-store-uri /app/mlruns \
-    --default-artifact-root /app/mlruns \
-    --workers 1 \
-    --gunicorn-opts "--timeout 120 --keep-alive 5 --log-level warning"
+# Commande de démarrage SANS gunicorn (utiliser le serveur intégré plus léger)
+# Le serveur MLflow intégré est suffisant pour le tier gratuit
+CMD ["sh", "-c", "mlflow server --host 0.0.0.0 --port ${PORT} --backend-store-uri /app/mlruns --default-artifact-root /app/mlruns"]

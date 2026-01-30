@@ -26,8 +26,23 @@ class Decision(str, Enum):
 
 
 class PredictionRequest(BaseModel):
-    """Requête de prédiction simple avec features en dictionnaire."""
-    features: Dict[str, Any] = Field(..., description="Dictionnaire des features du client")
+    """Requête de prédiction simple avec features en dictionnaire.
+    
+    Accepte les formats:
+    - {"features": {...}}  (format principal)
+    - {"data": {...}}      (format alternatif pour compatibilité)
+    """
+    features: Optional[Dict[str, Any]] = Field(None, description="Dictionnaire des features du client")
+    data: Optional[Dict[str, Any]] = Field(None, description="Alias pour features (compatibilité)")
+    
+    @property
+    def get_features(self) -> Dict[str, Any]:
+        """Retourne les features depuis 'features' ou 'data'."""
+        if self.features is not None:
+            return self.features
+        if self.data is not None:
+            return self.data
+        return {}
     
     class Config:
         json_schema_extra = {

@@ -40,10 +40,10 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copier l'application
 COPY streamlit_app/app.py ./app.py
 
-# Copier les modèles pour le fallback local (optionnel)
-COPY models/ ./models/
+# Note: Pas de fallback local - toutes les prédictions passent par l'API
+# On copie src/ uniquement pour d'éventuels utilitaires
 
-# Copier les sources nécessaires pour le fallback
+# Copier les sources (utilitaires si nécessaire)
 COPY src/ ./src/
 
 # Créer le répertoire data et télécharger les données Home Credit

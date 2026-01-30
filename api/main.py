@@ -244,12 +244,12 @@ async def predict(
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        # Extraire les features du request
-        client_dict = request.features
+        # Extraire les features du request (supporte 'features' ou 'data')
+        client_dict = request.get_features
 
         # Vérifier que le payload contient des données
         if not isinstance(client_dict, dict) or not client_dict:
-            raise HTTPException(status_code=400, detail="Payload invalide: features manquantes")
+            raise HTTPException(status_code=400, detail="Payload invalide: features ou data manquantes")
 
         df = pd.DataFrame([client_dict])
         
@@ -395,8 +395,12 @@ async def explain_prediction(
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        # Extraire les features
-        client_dict = request.features
+        # Extraire les features (supporte 'features' ou 'data')
+        client_dict = request.get_features
+
+        # Vérifier que le payload contient des données
+        if not isinstance(client_dict, dict) or not client_dict:
+            raise HTTPException(status_code=400, detail="Payload invalide: features ou data manquantes")
 
         df = pd.DataFrame([client_dict])
         

@@ -36,7 +36,6 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
 - **Contenu** : 
   - App Streamlit (`app.py`) avec 5 onglets (🎯 Scoring, 📊 Comparaison, 📁 Import/Simulation, 📈 Drift, 📖 Documentation)
   - Sources (`src/`)
-  - Modèles (fallback local si API indisponible)
   - ✅ **Données téléchargées automatiquement** depuis S3 OpenClassrooms lors du build
   - **Barre latérale enrichie** :
     - 🔗 Navigation & Services (liens MLflow, API Docs)
@@ -47,7 +46,7 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
 - **Variables d'env par défaut** :
   - `PORT=8501`
   - `API_URL=http://localhost:8000`
-  - `MLFLOW_URL=http://localhost:5002`
+  - `MLFLOW_URL=http://localhost:5000`
 - **Health check** : `/_stcore/health`
 - **Commande** : `streamlit run app.py --server.port=$PORT`
 
@@ -71,7 +70,7 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
 | **API** | `HOST` | 0.0.0.0 | ✅ Optionnel |
 | **Dashboard** | `PORT` | 8501 | Automatique (Render) |
 | **Dashboard** | `API_URL` | http://localhost:8000 | ✅ **Obligatoire** : `https://votre-api.onrender.com` |
-| **Dashboard** | `MLFLOW_URL` | http://localhost:5002 | ✅ **Obligatoire** : `https://votre-mlflow.onrender.com` |
+| **Dashboard** | `MLFLOW_URL` | http://localhost:5000 | ✅ **Obligatoire** : `https://votre-mlflow.onrender.com` |
 | **MLflow** | `PORT` | 5000 | Automatique (Render) |
 ---
 
@@ -372,8 +371,8 @@ graph LR
 - Vérifiez que l'API est bien déployée et répond
 
 **Problème : "Model not loaded"**
-- Normal si les modèles ne sont pas inclus dans l'image Docker
-- Le Dashboard utilise automatiquement le fallback local si l'API ne répond pas
+- Vérifiez que les modèles sont bien inclus dans l'image Docker de l'API
+- Vérifiez que l'API est démarrée et répond sur `/health`
 
 **Problème : MLflow - "WORKER TIMEOUT" ou "Out of memory"**
 - **Normal au premier démarrage** - Attendez 1-2 minutes que le service se stabilise

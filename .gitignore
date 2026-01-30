@@ -87,9 +87,15 @@ models/*.pth
 # ============================================
 # MLflow (tracking local)
 # ============================================
-# Inclure mlruns/ pour le déploiement Docker (contient les experiments)
-!mlruns/
+# mlruns/ à la racine est un doublon - IGNORER
+mlruns/
+
+# INCLURE notebooks/mlruns/ pour le déploiement Docker (contient les vraies expériences)
+# Note: la négation doit être APRÈS l'exclusion pour fonctionner
 !notebooks/mlruns/
+!notebooks/mlruns/**
+
+# Ignorer les artefacts MLflow lourds
 mlartifacts/
 
 # ============================================
