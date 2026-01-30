@@ -23,17 +23,30 @@ WORKDIR /app
 RUN pip install --no-cache-dir mlflow==2.9.2
 
 # Créer le répertoire pour les artefacts MLflow
-RUN mkdir -p /app/mlruns
+RUN mkdir -p /app/mlruns /app/notebooks_mlruns /app/mlruns_root
 
-# Copier les runs MLflow existants depuis la racine et notebooks
-# Les experiments principaux sont dans notebooks/mlruns/
-COPY mlruns/ /app/mlruns/
-COPY notebooks/mlruns/ /app/notebooks_mlruns/
+# Copier les runs MLflow depuis les 2 sources
+# 1. mlruns/ à la racine du projet (peut contenir des runs)
+COPY mlruns/. /app/mlruns_root/
 
-# Fusionner les runs dans un seul répertoire
-RUN cp -r /app/notebooks_mlruns/* /app/mlruns/ 2>/dev/null || true && \
-    rm -rf /app/notebooks_mlruns && \
-    echo "✅ MLflow runs copiés dans /app/mlruns/"
+# 2. notebooks/mlruns/ qui contient les vrais runs d'expériences
+COPY notebooks/mlruns/. /app/notebooks_mlruns/
+
+# Fusionner les deux sources dans /app/mlruns (destination finale)
+RUN echo "📦 Copie des MLflow runs..." && \
+    echo "=== Contenu mlruns_root ===" && \
+    ls -la /app/mlruns_root/ && \
+    echo "=== Contenu notebooks_mlruns ===" && \
+    ls -la /app/notebooks_mlruns/ && \
+    echo "=== Fusion dans mlruns ===" && \
+    cp -rv /app/mlruns_root/* /app/mlruns/ 2>/dev/null || true && \
+    cp -rv /app/notebooks_mlruns/* /app/mlruns/ 2>/dev/null || true && \
+    rm -rf /app/notebooks_mlruns /app/mlruns_root && \
+    echo "✅ Fusion terminée" && \
+    echo "=== Contenu final mlruns ===" && \
+    ls -laR /app/mlruns/ | head -50 && \
+    echo "=== Recherche meta.yaml ===" && \
+    find /app/mlruns -name "meta.yaml" -type f 2>/dev/null | head -20 || echo "⚠️ Aucun meta.yaml trouvé"
 
 # Exposer le port
 EXPOSE ${PORT}

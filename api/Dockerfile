@@ -11,11 +11,12 @@ LABEL maintainer="Home Credit Scoring Team"
 LABEL version="1.0.0"
 LABEL description="API de scoring crédit Home Credit"
 
-# Variables d'environnement
+# Variables d'environnement (noms conformes à RENDER_SETUP.md)
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    PORT=8000
+    PORT=8000 \
+    HOST=0.0.0.0
 
 # Créer un utilisateur non-root pour la sécurité
 RUN useradd --create-home --shell /bin/bash appuser

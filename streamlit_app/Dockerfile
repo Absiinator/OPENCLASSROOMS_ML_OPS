@@ -11,13 +11,14 @@ LABEL maintainer="Home Credit Scoring Team"
 LABEL version="1.0.0"
 LABEL description="Dashboard Streamlit Home Credit Scoring"
 
-# Variables d'environnement
+# Variables d'environnement (noms conformes à RENDER_SETUP.md)
+# Ces valeurs par défaut seront surchargées par Render
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
     PORT=8501 \
     API_URL=http://localhost:8000 \
-    MLFLOW_URL=http://localhost:5002
+    MLFLOW_URL=http://localhost:5000
 
 # Créer un utilisateur non-root
 RUN useradd --create-home --shell /bin/bash appuser

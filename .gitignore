@@ -173,4 +173,5 @@ temp/
 # Memory bank (genere automatiquement)
 # ============================================
 # On garde memory-bank pour la documentation
-# memory-bank/
+memory-bank/
+presentation_outline.txt

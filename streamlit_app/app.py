@@ -74,27 +74,18 @@ st.markdown("""
 # ============================================
 # Variables globales
 # ============================================
-# Endpoints configurés via variables d'environnement (déploiement GitHub Actions)
+# Endpoints configurés via variables d'environnement (déploiement Render)
 API_URL = os.getenv("API_URL", "http://localhost:8000")
-MLFLOW_URL = os.getenv("MLFLOW_URL", "http://localhost:5002")  # Fallback local par défaut
+MLFLOW_URL = os.getenv("MLFLOW_URL", "http://localhost:5000")
 
-# Chemins locaux pour fallback
-# En Docker: /app est le workdir, sinon on remonte d'un niveau depuis streamlit_app/
-if os.path.exists("/app/models"):
-    # Mode Docker
+# Chemins pour données et rapports (téléchargés dans Docker)
+if os.path.exists("/app/data"):
     PROJECT_ROOT = "/app"
 else:
-    # Mode local
     PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "lgbm_model.joblib")
-PREPROCESSOR_PATH = os.path.join(PROJECT_ROOT, "models", "preprocessor.joblib")
 DRIFT_REPORT_PATH = os.path.join(PROJECT_ROOT, "reports", "evidently_full_report.html")
 DATA_PATH = os.path.join(PROJECT_ROOT, "data", "application_train.csv")
-
-_LOCAL_MODEL_LOADED = False
-_LOCAL_MODEL = None
-_LOCAL_PREPROCESSOR = None
 
 # ============================================
 # Fonctions utilitaires
@@ -134,10 +125,7 @@ def get_model_features() -> Optional[list]:
 
 
 def predict(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
-    """Effectue une prédiction via l'API."""
-    api_error_msg = None
-    
-    # Première tentative: appel à l'API
+    """Effectue une prédiction via l'API (pas de fallback local)."""
     try:
         response = requests.post(
             f"{API_URL}/predict",
@@ -147,36 +135,26 @@ def predict(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
         if response.status_code == 200:
             return response.json()
         else:
-            # L'API a répondu mais avec une erreur
             try:
                 error_detail = response.json().get("detail", response.text)
             except:
                 error_detail = response.text
-            api_error_msg = f"Erreur API ({response.status_code}): {error_detail}"
+            st.error(f"🔴 Erreur API ({response.status_code}): {error_detail}")
+            return None
     except requests.exceptions.ConnectionError:
-        api_error_msg = "API non accessible - tentative de prédiction locale..."
+        st.error("🔴 API non accessible. Vérifiez que l'API est déployée et accessible.")
+        st.info(f"💡 URL configurée: {API_URL}")
+        return None
     except requests.exceptions.Timeout:
-        api_error_msg = "Timeout de l'API - tentative de prédiction locale..."
+        st.error("🔴 Timeout de l'API. Le serveur met trop de temps à répondre.")
+        return None
     except Exception as e:
-        api_error_msg = f"Erreur de connexion à l'API: {str(e)}"
-
-    # Fallback local: charger modèle + préprocesseur et prédire
-    try:
-        result = local_predict(features)
-        # Si fallback réussi, ne pas afficher d'erreur
-        return result
-    except Exception as local_e:
-        # Afficher l'erreur API si elle existe, sinon l'erreur locale
-        if api_error_msg:
-            st.error(f"🔴 {api_error_msg}")
-        st.error(f"🔴 Fallback local impossible: {local_e}")
-        st.info("💡 Conseil: Vérifiez que l'API est correctement déployée et que les modèles sont chargés.")
+        st.error(f"🔴 Erreur de connexion à l'API: {str(e)}")
         return None
 
 
 def explain(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
-    """Obtient l'explication SHAP via l'API."""
-    # Essayer via API
+    """Obtient l'explication SHAP via l'API (pas de fallback local)."""
     try:
         response = requests.post(
             f"{API_URL}/predict/explain",
@@ -185,98 +163,22 @@ def explain(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
         )
         if response.status_code == 200:
             return response.json()
-    except Exception:
-        pass
-
-    # Fallback local (SHAP si disponible)
-    try:
-        return local_explain(features)
-    except Exception as e:
-        st.error(f"Erreur d'explication locale: {e}")
+        else:
+            try:
+                error_detail = response.json().get("detail", response.text)
+            except:
+                error_detail = response.text
+            st.error(f"🔴 Erreur API explications ({response.status_code}): {error_detail}")
+            return None
+    except requests.exceptions.ConnectionError:
+        st.error("🔴 API non accessible pour les explications.")
         return None
-
-
-def _load_local_model():
-    """Charge et met en cache le préprocesseur et le modèle locaux."""
-    global _LOCAL_MODEL_LOADED, _LOCAL_MODEL, _LOCAL_PREPROCESSOR
-    if _LOCAL_MODEL_LOADED:
-        return
-    try:
-        import joblib
-        if os.path.exists(MODEL_PATH) and os.path.exists(PREPROCESSOR_PATH):
-            _LOCAL_PREPROCESSOR = joblib.load(PREPROCESSOR_PATH)
-            _LOCAL_MODEL = joblib.load(MODEL_PATH)
-            _LOCAL_MODEL_LOADED = True
-    except Exception:
-        _LOCAL_MODEL_LOADED = False
-
-
-def local_predict(features: Dict[str, float]) -> Dict[str, Any]:
-    """Effectue une prédiction en local en cas d'indisponibilité de l'API."""
-    _load_local_model()
-    if not _LOCAL_MODEL_LOADED:
-        raise RuntimeError("Modèle local indisponible (models/lgbm_model.joblib manquant)")
-
-    # Préparer dataframe d'entrée
-    df = pd.DataFrame([features])
-
-    # Appliquer préprocessing si disponible
-    X = df
-    if _LOCAL_PREPROCESSOR is not None:
-        try:
-            X = _LOCAL_PREPROCESSOR.transform(df)
-        except Exception:
-            # Si transform échoue, tenter d'utiliser le dataframe tel quel
-            X = df
-
-    # Prédiction
-    try:
-        proba = _LOCAL_MODEL.predict_proba(X)[:, 1]
-        prob = float(proba[0])
-    except Exception:
-        # Certains modèles retournent directement une prédiction continue
-        pred = _LOCAL_MODEL.predict(X)
-        prob = float(pred[0])
-
-    # Seuil par défaut (fallback)
-    threshold = 0.44
-    decision = "approved" if prob < threshold else "rejected"
-
-    return {"probability": prob, "prediction": int(prob >= threshold), "decision": decision, "threshold": threshold}
-
-
-def local_explain(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
-    """Calcule une explication locale via SHAP si disponible."""
-    _load_local_model()
-    if not _LOCAL_MODEL_LOADED:
-        raise RuntimeError("Modèle local indisponible pour explication")
-
-    try:
-        import shap
-    except Exception:
-        raise RuntimeError("SHAP non installé dans l'environnement; installez 'shap' pour obtenir des explications locales")
-
-    df = pd.DataFrame([features])
-    X = df
-    if _LOCAL_PREPROCESSOR is not None:
-        try:
-            X = _LOCAL_PREPROCESSOR.transform(df)
-        except Exception:
-            X = df
-
-    explainer = shap.Explainer(_LOCAL_MODEL)
-    shap_values = explainer(X)
-
-    # Renvoyer un mapping feature -> shap value (pour la première instance)
-    try:
-        shap_dict = {name: float(val) for name, val in zip(df.columns, shap_values.values[0][: len(df.columns)])}
-    except Exception:
-        # Fallback: utiliser summary_values si formes différentes
-        shap_dict = {f: float(v) for f, v in zip(df.columns, shap_values.values[0])}
-
-    base_value = float(shap_values.base_values[0]) if hasattr(shap_values, 'base_values') else 0.5
-
-    return {"shap_values": shap_dict, "base_value": base_value}
+    except requests.exceptions.Timeout:
+        st.error("🔴 Timeout lors du calcul des explications SHAP.")
+        return None
+    except Exception as e:
+        st.error(f"🔴 Erreur d'explication: {str(e)}")
+        return None
 
 
 # ============================================
