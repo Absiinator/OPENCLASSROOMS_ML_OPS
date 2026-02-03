@@ -48,9 +48,9 @@ services:
         value: "8501"
       # URLs des autres services Render (injectées au runtime)
       - key: API_URL
-        value: "https://home-credit-scoring-api.onrender.com"
+        value: "https://home-scoring-api.onrender.com"
       - key: MLFLOW_URL
-        value: "https://home-credit-scoring-mlflow.onrender.com"
+        value: "https://home-scoring-mlflow.onrender.com"
 
   # =========================================
   # 3. MLflow UI - Tracking des expériences

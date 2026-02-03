@@ -32,29 +32,20 @@ RUN pip install --no-cache-dir "mlflow==2.9.2" \
 # Créer le répertoire mlruns
 RUN mkdir -p /app/mlruns
 
-# Copier les expériences (notebooks/mlruns)
+# Copier les expériences (notebooks/mlruns avec chemins normalisés)
 COPY notebooks/mlruns/. /app/mlruns/
 
-# Nettoyer et corriger les chemins pour Docker
-# IMPORTANT: Les meta.yaml contiennent des chemins locaux absolus qu'il faut remplacer
-RUN echo "🔧 Correction des chemins MLflow pour Docker..." && \
-    # Supprimer les fichiers temporaires
-    rm -rf /app/mlruns/.trash 2>/dev/null || true && \
-    # Corriger TOUS les chemins artifact_location (expériences)
-    find /app/mlruns -name "meta.yaml" -type f -exec sed -i 's|artifact_location:.*|artifact_location: /app/mlruns|g' {} \; 2>/dev/null || true && \
-    # Corriger TOUS les chemins artifact_uri (runs) - pattern générique
-    find /app/mlruns -name "meta.yaml" -type f -exec sed -i 's|artifact_uri: /.*mlruns/|artifact_uri: /app/mlruns/|g' {} \; 2>/dev/null || true && \
-    # Supprimer les modèles volumineux (on garde les métriques et params)
-    find /app/mlruns -name "*.pkl" -delete 2>/dev/null || true && \
-    find /app/mlruns -name "*.joblib" -delete 2>/dev/null || true && \
-    # Afficher la structure finale
-    echo "=== Structure MLruns ===" && \
-    find /app/mlruns -type d -name "[0-9]*" | head -5 && \
-    du -sh /app/mlruns && \
+# Vérifier la structure - pas besoin de sed complexe car les chemins sont relatifs!
+RUN echo "📁 Structure MLflow (chemins relatifs = reproductibles):" && \
+    ls -la /app/mlruns/ && \
     echo "✅ MLflow prêt pour déploiement"
 
 # Exposer le port
 EXPOSE ${PORT}
 
-# Commande de démarrage
-CMD ["sh", "-c", "echo '[MLflow] Démarrage UI sur port ${PORT}' && mlflow ui --host 0.0.0.0 --port ${PORT} --backend-store-uri /app/mlruns"]
+# Health check (MLflow UI répond sur /)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/ || exit 1
+
+# Commande de démarrage avec logs détaillés
+CMD ["sh", "-c", "echo '[MLflow] === DÉMARRAGE ===' && echo '[MLflow] PORT=${PORT}' && echo '[MLflow] Contenu mlruns:' && ls -la /app/mlruns/ && echo '[MLflow] Expériences:' && ls /app/mlruns/*/meta.yaml 2>/dev/null | head -5 && echo '[MLflow] Démarrage UI...' && mlflow ui --host 0.0.0.0 --port ${PORT} --backend-store-uri /app/mlruns"]

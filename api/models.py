@@ -42,10 +42,8 @@ class PredictionRequest(BaseModel):
          -d '{"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, "EXT_SOURCE_1": 0.5}}'
     ```
     """
-    # Champs explicitement optionnels - DEFAULT = None pour éviter "Field required"
-    # NOTE: Ne PAS utiliser Field() ici car cela peut causer des erreurs 422
-    features: Optional[Dict[str, Any]] = None
-    data: Optional[Dict[str, Any]] = None
+    # AUCUN CHAMP OBLIGATOIRE - tous les formats sont acceptés via extra="allow"
+    # Le validator 'before' va transformer la requête en un format accepté
     
     model_config = {
         "extra": "allow",  # Accepter TOUS les champs supplémentaires (format plat)
@@ -80,10 +78,14 @@ class PredictionRequest(BaseModel):
     @model_validator(mode='before')
     @classmethod
     def accept_any_format(cls, values):
-        """Accepte n'importe quel format de requête sans erreur de validation."""
+        """Accepte n'importe quel format de requête sans erreur de validation.
+        
+        Transforme tous les formats possibles en un format standardisé avec __pydantic_extra__.
+        """
         if isinstance(values, dict):
             # Log pour debug
             print(f"[PredictionRequest] Payload reçu avec clés: {list(values.keys())}")
+            # Retourner le dict tel quel - sera stocké dans __pydantic_extra__
             return values
         return values
     
@@ -91,29 +93,30 @@ class PredictionRequest(BaseModel):
         """Retourne les features depuis le payload reçu.
         
         Essaie les formats dans cet ordre:
-        1. Cherche le champ 'features' (défini explicitement)
-        2. Cherche le champ 'data' (défini explicitement)
-        3. Retourne tous les champs supplémentaires (format plat)
+        1. Cherche le champ 'features' dans __pydantic_extra__
+        2. Cherche le champ 'data' dans __pydantic_extra__
+        3. Retourne tous les champs de __pydantic_extra__ (format plat)
         """
-        # Cas 1: Champ 'features' fourni (défini explicitement dans le modèle)
-        if self.features is not None and isinstance(self.features, dict):
-            print(f"[API /predict] Format 'features' détecté avec {len(self.features)} champs")
-            return self.features
-        
-        # Cas 2: Champ 'data' fourni (défini explicitement dans le modèle)
-        if self.data is not None and isinstance(self.data, dict):
-            print(f"[API /predict] Format 'data' détecté avec {len(self.data)} champs")
-            return self.data
-        
-        # Cas 3: Format plat - retourner tous les champs supplémentaires de __pydantic_extra__
+        # Récupérer tous les champs reçus (stockés dans __pydantic_extra__ car aucun field défini)
         extra_fields = getattr(self, '__pydantic_extra__', {}) or {}
-        if extra_fields:
-            print(f"[API /predict] Format plat détecté avec {len(extra_fields)} champs")
-            return extra_fields
         
-        # Cas 4: Aucun champ trouvé - retourner dictionnaire vide
-        print("[API /predict] Aucune feature trouvée dans le payload")
-        return {}
+        if not extra_fields:
+            print("[API /predict] Aucune feature trouvée dans le payload")
+            return {}
+        
+        # Cas 1: Format {"features": {...}}
+        if 'features' in extra_fields and isinstance(extra_fields['features'], dict):
+            print(f"[API /predict] Format 'features' détecté avec {len(extra_fields['features'])} champs")
+            return extra_fields['features']
+        
+        # Cas 2: Format {"data": {...}}
+        if 'data' in extra_fields and isinstance(extra_fields['data'], dict):
+            print(f"[API /predict] Format 'data' détecté avec {len(extra_fields['data'])} champs")
+            return extra_fields['data']
+        
+        # Cas 3: Format plat - retourner tous les champs directement
+        print(f"[API /predict] Format plat détecté avec {len(extra_fields)} champs")
+        return extra_fields
 
 
 class ClientFeatures(BaseModel):

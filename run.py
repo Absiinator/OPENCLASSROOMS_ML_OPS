@@ -108,6 +108,20 @@ main(sample_frac={sample}, include_supplementary={supplementary})
     
     os.chdir(PROJECT_ROOT)
     result = subprocess.run(cmd, cwd=PROJECT_ROOT)
+    
+    # Normaliser les chemins MLflow après entraînement
+    if result.returncode == 0:
+        print("\n" + "=" * 60)
+        print("        NORMALISATION DES CHEMINS MLFLOW")
+        print("=" * 60)
+        try:
+            from src.mlflow_utils import normalize_mlflow_paths
+            stats = normalize_mlflow_paths(PROJECT_ROOT / "notebooks" / "mlruns")
+            print("\n✅ Chemins MLflow normalisés pour reproductibilité")
+        except Exception as e:
+            print(f"\n⚠️  Erreur lors de la normalisation: {e}")
+            print("   (Les chemins absolus seront corrigés au déploiement Docker)")
+    
     return result.returncode
 
 
