@@ -17,7 +17,7 @@ services:
   # 1. API FastAPI - Scoring Credit
   # =========================================
   - type: web
-    name: home-credit-scoring-api
+    name: home-scoring-api
     runtime: docker
     dockerfilePath: ./api/Dockerfile
     dockerContext: .
@@ -35,7 +35,7 @@ services:
   # 2. Dashboard Streamlit
   # =========================================
   - type: web
-    name: home-credit-scoring-dashboard
+    name: home-scoring-dashboard
     runtime: docker
     dockerfilePath: ./streamlit_app/Dockerfile
     dockerContext: .
@@ -56,7 +56,7 @@ services:
   # 3. MLflow UI - Tracking des expériences
   # =========================================
   - type: web
-    name: home-credit-scoring-mlflow
+    name: home-scoring-mlflow
     runtime: docker
     dockerfilePath: ./mlflow/Dockerfile
     dockerContext: .
