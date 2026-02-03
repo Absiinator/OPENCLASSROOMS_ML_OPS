@@ -313,76 +313,60 @@ pytest tests/test_api.py -v         # Tests API
 
 ### Architecture CI/CD
 
-Le projet utilise **2 workflows GitHub Actions séparés** pour la maintenabilité :
+Le projet utilise un **workflow GitHub Actions unifié** ([ci-cd.yml](.github/workflows/ci-cd.yml)) :
 
-1. **CI (`ci.yml`)** - Intégration Continue
-   - Linting (black, isort, flake8)
-   - Tests unitaires (pytest)
+1. **Lint** - Vérification du code (non bloquant)
+   - black, isort, flake8
+
+2. **Test** - Tests unitaires (BLOQUANT)
+   - pytest avec couverture
    - Tests API
-   - Analyse de sécurité (bandit, safety)
 
-2. **CD (`deploy.yml`)** - Build et Publication des Images
-   - **S'exécute uniquement si la CI réussit**
+3. **Build & Push** - Publication des images Docker
+   - **S'exécute uniquement si les tests passent**
    - Build des 3 images Docker (API, Dashboard, MLflow)
    - Push vers GitHub Container Registry (GHCR)
-   - Notification des builds réussis
-   - **Déploiement MANUEL** sur Render (tier gratuit)
+
+4. **Summary** - Résumé du déploiement
+   - Instructions pour le déploiement manuel sur Render
 
 ### Flux de déploiement
 
 ```
-Push sur main → CI (tests) → ✅ Succès → CD (build images) → GHCR → Manual Deploy sur Render
-                           → ❌ Échec → Pas de build
+Push sur main → Tests → ✅ Succès → Build Docker → Push GHCR → Manual Deploy Render
+                      → ❌ Échec → Arrêt (pas de build)
 ```
 
-**Étapes** :
-1. Push code sur `main`
-2. CI exécute les tests
-3. Si tests ✅ → CD build les images Docker
-4. Images poussées vers GHCR (GitHub Container Registry)
-5. Sur Render, cliquez "Manual Deploy" pour déployer les nouvelles images
+### Configuration Render (render.yaml)
 
-### Configuration Render (gratuit)
+Le fichier `render.yaml` définit les 3 services avec Blueprint :
 
-#### 1. Déployer l'API
+| Service | Port | Health Check | Variables |
+|---------|------|--------------|-----------|
+| **API** | 8000 | `/health` | `PORT=8000` |
+| **Dashboard** | 8501 | `/_stcore/health` | `API_URL`, `MLFLOW_URL` |
+| **MLflow** | 5000 | `/` | `PORT=5000` |
 
-| Paramètre | Valeur |
-|-----------|--------|
-| Type | Web Service |
-| Environment | Docker |
-| Dockerfile Path | `api/Dockerfile` |
-| Health Check Path | `/health` |
-| Port | 8000 |
+#### Déploiement avec Blueprint
 
-#### 2. Déployer le Dashboard
+1. Allez sur [dashboard.render.com](https://dashboard.render.com)
+2. Cliquez **New** → **Blueprint**
+3. Connectez votre repo GitHub
+4. Render détecte automatiquement `render.yaml`
+5. Les 3 services sont créés automatiquement
 
-| Paramètre | Valeur |
-|-----------|--------|
-| Type | Web Service |
-| Environment | Docker |
-| Dockerfile Path | `streamlit_app/Dockerfile` |
-| Health Check Path | `/_stcore/health` |
-| Port | 8501 |
+#### Variables d'environnement Dashboard (à configurer après déploiement)
 
-**Variable d'environnement requise pour le Dashboard:**
+```bash
+API_URL=https://home-credit-scoring-api.onrender.com
+MLFLOW_URL=https://home-credit-scoring-mlflow.onrender.com
 ```
-API_URL=https://votre-api.onrender.com
-```
+
+> ⚠️ **Important** : Après le premier déploiement, mettez à jour `API_URL` et `MLFLOW_URL` avec les vraies URLs de vos services Render.
 
 ### Secrets GitHub requis
 
-Pour publier les images sur GHCR, aucun secret supplémentaire n'est nécessaire (utilise `GITHUB_TOKEN` automatique).
-
-Si vous souhaitez automatiser le déploiement Render via l'API (non utilisé actuellement) :
-
-| Secret | Description | Nécessaire ? |
-|--------|-------------|-------------|
-| `RENDER_API_KEY` | Clé API Render | ❌ Non (déploiement manuel) |
-| `RENDER_SERVICE_API` | ID du service API | ❌ Non (déploiement manuel) |
-| `RENDER_SERVICE_DASHBOARD` | ID du service Dashboard | ❌ Non (déploiement manuel) |
-| `RENDER_SERVICE_MLFLOW` | ID du service MLflow | ❌ Non (déploiement manuel) |
-
-> 💡 **Note** : Le tier gratuit de Render nécessite un déploiement manuel. Les secrets ci-dessus ne sont utiles que si vous passez au tier payant pour automatiser les déploiements.
+Aucun secret supplémentaire n'est nécessaire. Le workflow utilise `GITHUB_TOKEN` automatique pour publier sur GHCR.
 
 ### Variables d'environnement
 

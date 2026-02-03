@@ -323,9 +323,14 @@ async def predict(
     - `risk_category` : very_low, low, medium, high, very_high
     - `threshold` : Seuil utilisé (défaut: 0.44)
     """
-    # === LOGS DEBUG ===
-    print(f"[API /predict] Requête reçue")
-    print(f"[API /predict] Type de requête: {type(request)}")
+    # === LOGS DEBUG DÉTAILLÉS ===
+    print("=" * 60)
+    print(f"[API /predict] ===== NOUVELLE REQUÊTE =====")
+    print(f"[API /predict] Type de request: {type(request)}")
+    print(f"[API /predict] request.features: {request.features is not None}")
+    print(f"[API /predict] request.data: {request.data is not None}")
+    if hasattr(request, '__pydantic_extra__'):
+        print(f"[API /predict] Extra fields: {request.__pydantic_extra__}")
     
     used_model = model_dep or model
     used_preprocessor = preprocessor_dep or preprocessor

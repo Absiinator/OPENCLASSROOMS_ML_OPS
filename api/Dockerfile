@@ -11,13 +11,15 @@ LABEL maintainer="Home Credit Scoring Team"
 LABEL version="1.0.0"
 LABEL description="API de scoring crédit Home Credit"
 
-# Variables d'environnement (noms conformes aux services Render)
-# HOST et PORT sont les seules variables pour l'API
+# Build args et variables d'environnement (injectables via --build-arg)
+# Permet à GitHub Actions de transmettre des valeurs au moment du build si nécessaire
+ARG HOST=0.0.0.0
+ARG PORT=8000
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    HOST=0.0.0.0 \
-    PORT=8000
+    HOST=${HOST} \
+    PORT=${PORT}
 
 # Créer un utilisateur non-root pour la sécurité
 RUN useradd --create-home --shell /bin/bash appuser

@@ -12,16 +12,21 @@ LABEL version="1.0.0"
 LABEL description="Dashboard Streamlit Home Credit Scoring"
 
 # Variables d'environnement (noms conformes aux services Render)
-# API_URL et MLFLOW_URL seront configurées sur Render
-# STREAMLIT_SERVER_ADDRESS et STREAMLIT_SERVER_PORT pour la configuration Streamlit
+# Build args et variables d'environnement (injectables via --build-arg)
+# API_URL et MLFLOW_URL peuvent être passées au build ou configurées sur Render
+ARG API_URL=http://localhost:8000
+ARG MLFLOW_URL=http://localhost:5000
+ARG PORT=8501
+ARG STREAMLIT_SERVER_ADDRESS=0.0.0.0
+ARG STREAMLIT_SERVER_PORT=8501
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    PORT=8501 \
-    API_URL=http://localhost:8000 \
-    MLFLOW_URL=http://localhost:5000 \
-    STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
-    STREAMLIT_SERVER_PORT=8501
+    PORT=${PORT} \
+    API_URL=${API_URL} \
+    MLFLOW_URL=${MLFLOW_URL} \
+    STREAMLIT_SERVER_ADDRESS=${STREAMLIT_SERVER_ADDRESS} \
+    STREAMLIT_SERVER_PORT=${STREAMLIT_SERVER_PORT}
 
 # Créer un utilisateur non-root
 RUN useradd --create-home --shell /bin/bash appuser

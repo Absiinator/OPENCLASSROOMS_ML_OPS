@@ -37,17 +37,19 @@ class PredictionRequest(BaseModel):
     
     Exemple de requête curl:
     ```bash
-    curl -X POST "https://votre-api.onrender.com/predict" \
-         -H "Content-Type: application/json" \
+    curl -X POST "https://votre-api.onrender.com/predict" \\
+         -H "Content-Type: application/json" \\
          -d '{"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, "EXT_SOURCE_1": 0.5}}'
     ```
     """
-    # Définir explicitement les champs optionnels pour éviter les erreurs de validation
-    features: Optional[Dict[str, Any]] = Field(None, description="Dictionnaire des features (format principal)")
-    data: Optional[Dict[str, Any]] = Field(None, description="Dictionnaire des features (format alternatif)")
+    # Champs explicitement optionnels - DEFAULT = None pour éviter "Field required"
+    # NOTE: Ne PAS utiliser Field() ici car cela peut causer des erreurs 422
+    features: Optional[Dict[str, Any]] = None
+    data: Optional[Dict[str, Any]] = None
     
     model_config = {
         "extra": "allow",  # Accepter TOUS les champs supplémentaires (format plat)
+        "populate_by_name": True,  # Permettre les alias
         "json_schema_extra": {
             "examples": [
                 {
@@ -70,19 +72,20 @@ class PredictionRequest(BaseModel):
                         "ANNUITY_INCOME_RATIO": 0.17,
                         "EXT_SOURCE_MEAN": 0.55
                     }
-                },
-                {
-                    "data": {
-                        "AMT_INCOME_TOTAL": 100000.0,
-                        "AMT_CREDIT": 300000.0,
-                        "EXT_SOURCE_1": 0.4,
-                        "EXT_SOURCE_2": 0.5,
-                        "EXT_SOURCE_3": 0.45
-                    }
                 }
             ]
         }
     }
+    
+    @model_validator(mode='before')
+    @classmethod
+    def accept_any_format(cls, values):
+        """Accepte n'importe quel format de requête sans erreur de validation."""
+        if isinstance(values, dict):
+            # Log pour debug
+            print(f"[PredictionRequest] Payload reçu avec clés: {list(values.keys())}")
+            return values
+        return values
     
     def get_features_dict(self) -> Dict[str, Any]:
         """Retourne les features depuis le payload reçu.

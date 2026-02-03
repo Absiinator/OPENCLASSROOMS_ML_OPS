@@ -107,7 +107,8 @@ DATA_PATH = os.path.join(PROJECT_ROOT, "data", "application_train.csv")
 def check_api_health() -> bool:
     """Vérifie si l'API est accessible (cache 30s)."""
     try:
-        response = requests.get(f"{API_URL}/health", timeout=3)
+        # Timeout augmenté pour cold start Render (services gratuits)
+        response = requests.get(f"{API_URL}/health", timeout=15)
         return response.status_code == 200
     except:
         return False
@@ -117,7 +118,8 @@ def check_api_health() -> bool:
 def get_model_info() -> Optional[Dict[str, Any]]:
     """Récupère les informations du modèle (cache 5 min)."""
     try:
-        response = requests.get(f"{API_URL}/model/info", timeout=5)
+        # Timeout augmenté pour cold start Render
+        response = requests.get(f"{API_URL}/model/info", timeout=30)
         if response.status_code == 200:
             return response.json()
     except:
@@ -128,7 +130,8 @@ def get_model_info() -> Optional[Dict[str, Any]]:
 def get_model_features() -> Optional[list]:
     """Récupère la liste des noms des features du modèle."""
     try:
-        response = requests.get(f"{API_URL}/model/feature-names", timeout=10)
+        # Timeout augmenté pour cold start Render
+        response = requests.get(f"{API_URL}/model/feature-names", timeout=30)
         if response.status_code == 200:
             return response.json().get("features", [])
     except:
@@ -139,11 +142,16 @@ def get_model_features() -> Optional[list]:
 def predict(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
     """Effectue une prédiction via l'API (pas de fallback local)."""
     try:
+        # Timeout augmenté pour Render free tier (cold start ~30-60s)
+        print(f"[STREAMLIT] Envoi requête POST {API_URL}/predict")
+        print(f"[STREAMLIT] Payload: features avec {len(features)} champs")
         response = requests.post(
             f"{API_URL}/predict",
             json={"features": features},
-            timeout=30
+            timeout=90,  # 90s pour cold start Render
+            headers={"Content-Type": "application/json"}
         )
+        print(f"[STREAMLIT] Réponse: {response.status_code}")
         if response.status_code == 200:
             return response.json()
         else:
@@ -168,11 +176,15 @@ def predict(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
 def explain(features: Dict[str, float]) -> Optional[Dict[str, Any]]:
     """Obtient l'explication SHAP via l'API (pas de fallback local)."""
     try:
+        # Timeout long pour SHAP (calcul intensif + cold start)
+        print(f"[STREAMLIT] Envoi requête POST {API_URL}/predict/explain")
         response = requests.post(
             f"{API_URL}/predict/explain",
             json={"features": features},
-            timeout=60
+            timeout=120,  # 120s pour SHAP + cold start Render
+            headers={"Content-Type": "application/json"}
         )
+        print(f"[STREAMLIT] Réponse explain: {response.status_code}")
         if response.status_code == 200:
             return response.json()
         else:

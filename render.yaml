@@ -1,7 +1,24 @@
+# =============================================================================
+# Render Blueprint - Home Credit Scoring
+# =============================================================================
+# Déploiement automatique des 3 services sur Render
+# Documentation: https://render.com/docs/blueprint-spec
+#
+# ARCHITECTURE:
+# - GitHub Actions: Tests unitaires + Build images Docker + Push GHCR
+# - Render: Déploiement des services avec variables d'environnement
+#
+# Les variables d'environnement ci-dessous sont injectées par Render au runtime
+# et écrasent les valeurs par défaut des Dockerfiles.
+# =============================================================================
+
 services:
+  # =========================================
+  # 1. API FastAPI - Scoring Credit
+  # =========================================
   - type: web
     name: home-credit-scoring-api
-    env: docker
+    runtime: docker
     dockerfilePath: ./api/Dockerfile
     dockerContext: .
     plan: free
@@ -10,10 +27,43 @@ services:
     autoDeploy: true
     envVars:
       - key: PORT
-        value: 8000
+        value: "8000"
       - key: PYTHONPATH
         value: /app
-      - key: MODEL_PATH
-        value: /app/models/lgbm_model.joblib
-      - key: PREPROCESSOR_PATH
-        value: /app/models/preprocessor.joblib
+
+  # =========================================
+  # 2. Dashboard Streamlit
+  # =========================================
+  - type: web
+    name: home-credit-scoring-dashboard
+    runtime: docker
+    dockerfilePath: ./streamlit_app/Dockerfile
+    dockerContext: .
+    plan: free
+    region: frankfurt
+    healthCheckPath: /_stcore/health
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "8501"
+      # URLs des autres services Render (injectées au runtime)
+      - key: API_URL
+        value: "https://home-credit-scoring-api.onrender.com"
+      - key: MLFLOW_URL
+        value: "https://home-credit-scoring-mlflow.onrender.com"
+
+  # =========================================
+  # 3. MLflow UI - Tracking des expériences
+  # =========================================
+  - type: web
+    name: home-credit-scoring-mlflow
+    runtime: docker
+    dockerfilePath: ./mlflow/Dockerfile
+    dockerContext: .
+    plan: free
+    region: frankfurt
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "5000"
