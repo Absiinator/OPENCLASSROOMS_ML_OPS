@@ -43,7 +43,7 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
 - **Base** : `python:3.10-slim`
 - **Port** : 8501
 - **Contenu** :
-  - App Streamlit (`app.py`) avec 4 onglets (🎯 Scoring, 📊 Comparaison, 📈 Drift, 📖 Documentation)
+  - App Streamlit (`app.py`) : Scoring avec comparaison intégrée, Data Drift, Documentation
   - Sources (`src/`)
   - ✅ **Données téléchargées automatiquement** depuis S3 OpenClassrooms lors du build
 - **Health check** : `/_stcore/health`

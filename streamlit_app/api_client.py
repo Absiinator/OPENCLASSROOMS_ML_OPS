@@ -54,8 +54,7 @@ def predict_client(features: Dict[str, Any]) -> Dict[str, Any]:
     """
     Effectue une prédiction pour un client.
     
-    Utilise l'endpoint /predict/simple qui accepte les JSON bruts
-    sans validation Pydantic stricte (évite les erreurs 422).
+    Utilise l'endpoint /predict avec le format attendu par l'API.
     
     Args:
         features: Dictionnaire des caractéristiques du client
@@ -87,26 +86,28 @@ def predict_client(features: Dict[str, Any]) -> Dict[str, Any]:
         Ou dict avec "error" si échec
     """
     try:
-        payload = {"features": features}
-
-        # Endpoint principal (tolère les JSON bruts)
-        endpoint = "/predict/simple"
+        endpoint = "/predict"
+        url = f"{API_URL}{endpoint}"
         response = requests.post(
-            f"{API_URL}{endpoint}",
-            json=payload,
+            url,
+            json={"features": features},
             timeout=TIMEOUT_PREDICT,
             headers={"Content-Type": "application/json"}
         )
 
-        # Fallback si l'endpoint n'existe pas (API plus ancienne)
-        if response.status_code == 404:
-            endpoint = "/predict"
-            response = requests.post(
-                f"{API_URL}{endpoint}",
-                json=payload,
-                timeout=TIMEOUT_PREDICT,
-                headers={"Content-Type": "application/json"}
-            )
+        # Fallback simple si l'API attend encore "data" (compatibilité)
+        if response.status_code == 422:
+            try:
+                detail = response.json()
+            except Exception:
+                detail = response.text
+            if "data" in str(detail).lower():
+                response = requests.post(
+                    url,
+                    json={"data": features},
+                    timeout=TIMEOUT_PREDICT,
+                    headers={"Content-Type": "application/json"}
+                )
 
         if response.status_code == 200:
             return response.json()
@@ -143,15 +144,28 @@ def explain_prediction(features: Dict[str, Any]) -> Dict[str, Any]:
         Ou dict avec "error" si échec
     """
     try:
-        payload = {"features": features}
-        
+        url = f"{API_URL}/predict/explain"
         response = requests.post(
-            f"{API_URL}/predict/explain",
-            json=payload,
+            url,
+            json={"features": features},
             timeout=TIMEOUT_PREDICT,
             headers={"Content-Type": "application/json"}
         )
-        
+
+        # Fallback simple si l'API attend encore "data" (compatibilité)
+        if response.status_code == 422:
+            try:
+                detail = response.json()
+            except Exception:
+                detail = response.text
+            if "data" in str(detail).lower():
+                response = requests.post(
+                    url,
+                    json={"data": features},
+                    timeout=TIMEOUT_PREDICT,
+                    headers={"Content-Type": "application/json"}
+                )
+
         if response.status_code == 200:
             return response.json()
         else:

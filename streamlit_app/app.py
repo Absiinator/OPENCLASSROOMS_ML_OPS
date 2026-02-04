@@ -93,6 +93,7 @@ else:
 
 DRIFT_REPORT_PATH = os.path.join(PROJECT_ROOT, "reports", "evidently_full_report.html")
 DATA_PATH = os.path.join(PROJECT_ROOT, "data", "application_train.csv")
+FEATURE_IMPORTANCE_PATH = os.path.join(PROJECT_ROOT, "reports", "feature_importance.csv")
 
 
 # ============================================
@@ -109,6 +110,20 @@ def load_reference_data() -> pd.DataFrame:
         except Exception:
             pass
     return pd.DataFrame()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_top_features_from_report(top_n: int = 15) -> List[str]:
+    """Charge les features les plus importantes depuis le rapport (notebooks)."""
+    if os.path.exists(FEATURE_IMPORTANCE_PATH):
+        try:
+            df = pd.read_csv(FEATURE_IMPORTANCE_PATH)
+            if "feature" in df.columns and "importance" in df.columns:
+                df = df.sort_values("importance", ascending=False)
+                return df["feature"].head(top_n).tolist()
+        except Exception:
+            pass
+    return []
 
 
 def interpret_score(probability: float, threshold: float) -> dict:
@@ -314,7 +329,6 @@ def render_sidebar(reference_data: pd.DataFrame):
         st.header("📍 Navigation")
         nav_options = [
             ("🎯 Scoring", "scoring"),
-            ("📊 Comparaison", "comparison"),
             ("📈 Data Drift", "drift"),
             ("📖 Documentation", "docs")
         ]
@@ -389,11 +403,13 @@ def render_prediction_tab():
     """Onglet principal: Scoring et prédiction."""
     st.header("🎯 Scoring de crédit")
     
-    # Vérifier l'API
-    if not check_api_health():
-        st.error("⚠️ L'API n'est pas disponible. Vérifiez l'URL et le déploiement.")
+    # Vérifier l'API (ne bloque pas la comparaison)
+    api_ok = check_api_health()
+    if not api_ok:
+        st.warning("⚠️ API indisponible. La comparaison reste possible, la prédiction est désactivée.")
         st.info(f"API_URL: {API_URL}")
-        return
+
+    ref_data = load_reference_data()
     
     st.markdown("### Saisie des informations client")
     
@@ -500,9 +516,15 @@ def render_prediction_tab():
     st.session_state.current_features = features
     
     st.markdown("---")
-    
+
+    # Comparaison population (sans prédiction)
+    with st.expander("📊 Comparaison avec la population (sans prédiction)", expanded=False):
+        render_comparison_section(features, ref_data, show_header=False)
+
+    st.markdown("---")
+
     # Bouton de prédiction
-    if st.button("🔮 Calculer le score", type="primary", use_container_width=True):
+    if st.button("🔮 Calculer le score", type="primary", use_container_width=True, disabled=not api_ok):
         with st.spinner("Calcul en cours..."):
             result = predict_client(features)
         
@@ -574,23 +596,21 @@ def render_prediction_tab():
             if status_code == 404:
                 st.error("❌ Endpoint API introuvable (404).")
                 st.info(f"API_URL: {API_URL}")
-                endpoint = result.get("endpoint", "/predict/simple") if result else "/predict/simple"
-                st.info(f"Endpoint attendu: {API_URL}{endpoint}")
+                st.info(f"Endpoint attendu: {API_URL}/predict")
             else:
                 st.error(f"❌ Erreur API ({status_code}): {detail}")
 
 
-def render_comparison_tab():
-    """Onglet comparaison avec la population."""
-    st.header("📊 Comparaison avec la population")
-    ref_data = load_reference_data()
+def render_comparison_section(
+    features: Dict[str, float],
+    ref_data: pd.DataFrame,
+    show_header: bool = True
+):
+    """Section comparaison avec la population."""
+    if show_header:
+        st.header("📊 Comparaison avec la population")
     if ref_data.empty:
         st.warning("⚠️ Données de référence non disponibles.")
-        return
-
-    features = st.session_state.get("current_features") or st.session_state.get("last_features")
-    if not features:
-        st.info("💡 Saisissez d'abord un client dans l'onglet Scoring.")
         return
 
     st.markdown("""
@@ -624,11 +644,15 @@ def render_comparison_tab():
 
     with tab1:
         st.subheader("🎯 Comparaison multi-critères")
-        default_radar = [f for f in [
-            "AMT_INCOME_TOTAL", "AMT_CREDIT", "AMT_ANNUITY",
-            "EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3",
-            "CREDIT_INCOME_RATIO"
-        ] if f in available_features][:6]
+        # Utiliser les features les plus importantes issues du notebook (reports/feature_importance.csv)
+        top_from_report = load_top_features_from_report(15)
+        default_radar = [f for f in top_from_report if f in available_features][:6]
+        if len(default_radar) < 3:
+            default_radar = [f for f in [
+                "EXT_SOURCE_2", "EXT_SOURCE_3", "EXT_SOURCE_1",
+                "DAYS_BIRTH", "AMT_CREDIT", "AMT_ANNUITY",
+                "AMT_INCOME_TOTAL", "CREDIT_INCOME_RATIO"
+            ] if f in available_features][:6]
 
         radar_features = st.multiselect(
             "Caractéristiques à comparer (3-8 recommandé)",
@@ -754,7 +778,7 @@ def render_documentation_tab():
     - La décision (Accordé/Refusé)
     - Une interprétation pour non-experts
     
-    ### 📊 Onglet Comparaison
+    ### 📊 Comparaison (dans l'onglet Scoring)
     Comparez le profil du client avec l'ensemble de la population:
     - Visualisation de la distribution
     - Position du client (percentile)
@@ -812,12 +836,13 @@ def main():
 
     if current_page == "scoring":
         render_prediction_tab()
-    elif current_page == "comparison":
-        render_comparison_tab()
     elif current_page == "drift":
         render_drift_tab()
     elif current_page == "docs":
         render_documentation_tab()
+    else:
+        st.session_state.current_page = "scoring"
+        render_prediction_tab()
 
 
 if __name__ == "__main__":

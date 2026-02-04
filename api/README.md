@@ -23,11 +23,23 @@ L’API charge automatiquement les artefacts présents dans `models/` à la raci
 ## Endpoints principaux
 
 - `/health` : état de l’API et chargement du modèle
-- `/predict` : prédiction d’un client (format flexible)
+- `/predict` : prédiction d’un client (format unique: `features`)
 - `/predict/batch` : prédictions multiples
 - `/predict/explain` : explication locale des features
 - `/model/info` : informations modèle
 - `/model/features` : importance des variables
+
+## Format de requête
+
+```json
+{
+  "features": {
+    "AMT_INCOME_TOTAL": 150000,
+    "AMT_CREDIT": 500000,
+    "DAYS_BIRTH": -12000
+  }
+}
+```
 
 ## Données et rapports
 

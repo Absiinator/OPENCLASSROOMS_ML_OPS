@@ -6,8 +6,8 @@ Définit les modèles de données pour les requêtes et réponses de l'API.
 Compatible Pydantic v2 et FastAPI.
 """
 
-from pydantic import BaseModel, Field, ConfigDict, model_validator
-from typing import Optional, List, Dict, Any, Union
+from pydantic import BaseModel, Field, ConfigDict, AliasChoices
+from typing import Optional, List, Dict, Any
 from enum import Enum
 
 
@@ -28,29 +28,20 @@ class Decision(str, Enum):
 
 class PredictionRequest(BaseModel):
     """Requête de prédiction simple avec features en dictionnaire.
-    
-    ACCEPTE TOUS LES FORMATS - très flexible pour compatibilité maximale.
-    
-    Formats acceptés:
-    - {"features": {...}}  (format principal - utilisé par le Dashboard Streamlit)
-    - {"data": {...}}      (format alternatif pour compatibilité)
-    - Dictionnaire plat avec les features directement à la racine
-    
-    Exemple de requête curl:
-    ```bash
-    curl -X POST "https://votre-api.onrender.com/predict" \\
-         -H "Content-Type: application/json" \\
-         -d '{"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, "EXT_SOURCE_1": 0.5}}'
-    ```
+
+    Format attendu (unique) :
+    {
+      "features": { ... }
+    }
+    Compatibilité: "data" est accepté comme alias.
     """
-    # Pydantic v2: Pour rendre vraiment optionnel dans OpenAPI, utiliser Field(default=None)
-    # Même avec Optional[T], le schéma considère le champ comme requis sans Field
-    features: Optional[Dict[str, Any]] = Field(default=None, description="Features du client (format principal)")
-    data: Optional[Dict[str, Any]] = Field(default=None, description="Données alternatives (format de compatibilité)")
-    
-    # Configuration Pydantic v2
+    features: Dict[str, Any] = Field(
+        ...,
+        description="Features du client (format unique attendu)",
+        validation_alias=AliasChoices("features", "data")
+    )
+
     model_config = ConfigDict(
-        extra="allow",  # Accepter les champs supplémentaires (format plat)
         populate_by_name=True,
         json_schema_extra={
             "examples": [
@@ -79,39 +70,9 @@ class PredictionRequest(BaseModel):
         }
     )
 
-    @model_validator(mode='after')
-    def validate_data_presence(self) -> 'PredictionRequest':
-        """Valider qu'au moins features ou data est fourni."""
-        if not self.features and not self.data:
-            raise ValueError("Au moins un des champs 'features' ou 'data' doit être fourni")
-        return self
-    
     def get_features_dict(self) -> Dict[str, Any]:
-        """Retourne les features depuis le payload reçu.
-        
-        Essaie les formats dans cet ordre:
-        1. Cherche le champ 'features'
-        2. Cherche le champ 'data'
-        3. Retourne tous les champs supplémentaires (format plat)
-        """
-        # Cas 1: Format {"features": {...}}
-        if self.features is not None and isinstance(self.features, dict) and len(self.features) > 0:
-            print(f"[API /predict] Format 'features' détecté avec {len(self.features)} champs")
-            return self.features
-        
-        # Cas 2: Format {"data": {...}}
-        if self.data is not None and isinstance(self.data, dict) and len(self.data) > 0:
-            print(f"[API /predict] Format 'data' détecté avec {len(self.data)} champs")
-            return self.data
-        
-        # Cas 3: Format plat - retourner les champs extra (Pydantic v2)
-        extra_fields = getattr(self, '__pydantic_extra__', None) or {}
-        if extra_fields and len(extra_fields) > 0:
-            print(f"[API /predict] Format plat détecté avec {len(extra_fields)} champs")
-            return extra_fields
-        
-        print("[API /predict] Aucune feature trouvée dans le payload")
-        return {}
+        """Retourne les features telles qu'envoyées."""
+        return self.features
 
 
 class ClientFeatures(BaseModel):

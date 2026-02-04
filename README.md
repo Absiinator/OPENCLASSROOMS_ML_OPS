@@ -100,7 +100,7 @@ Le projet fournit **3 Dockerfiles** (API, Dashboard, MLflow). Chaque image est p
 - **Port** : 8501
 - **Variables obligatoires** : `API_URL`, `MLFLOW_URL`
 - **Contenu** :
-  - Application Streamlit (4 onglets: Scoring, Comparaison, Data Drift, Documentation)
+  - Application Streamlit (Scoring + Comparaison intégrée, Data Drift, Documentation)
   - Rapports Evidently dans `reports/`
   - **Données téléchargées automatiquement** pendant le build (extraction vers `/app/data`)
 
@@ -163,30 +163,21 @@ Le projet fournit **3 Dockerfiles** (API, Dashboard, MLflow). Chaque image est p
 | `/model/info` | GET | Infos du modèle (seuil, version, features) |
 | `/model/features` | GET | Liste des features |
 
-**Formats supportés pour `/predict`** (Pydantic v2 + ConfigDict) :
+**Format supporté pour `/predict`** :
 
 ```json
 {
   "features": {
     "AMT_INCOME_TOTAL": 150000,
     "AMT_CREDIT": 500000,
-    "DAYS_BIRTH": -18000,
-    ...
+    "DAYS_BIRTH": -18000
   }
 }
 ```
 
-Les 2 formats alternatifs sont aussi acceptés (grâce à `extra="allow"`) :
-
-```json
-{"data": {...}}  ✅ Format alternatif
-{field1: val1, field2: val2, ...}  ✅ Format plat (colonnes supplémentaires ignorées)
-```
-
 **Notes** :
 - L'API charge automatiquement les modèles au démarrage depuis `/app/models/` dans Docker.
-- Format JSON flexible : `features`, `data`, ou format plat acceptés.
-- Toutes les colonnes supplémentaires ignorées (mode `extra="allow"`).
+- Seul le champ `features` est traité.
 
 ### 6. 🔄 CI/CD & Déploiement Render (plan gratuit)
 
@@ -256,28 +247,21 @@ le prétraitement et l’API (pas de tests de déploiement Render).
 
 ### Compatibilité Pydantic v2
 
-L'API utilise **Pydantic v2.5+** avec une configuration ConfigDict pour gérer les modèles de requête de façon flexible :
+L'API utilise **Pydantic v2.5+** avec un format unique pour les requêtes :
 
 ```python
 # api/models.py
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, Dict, Any
+from pydantic import BaseModel, Field
+from typing import Dict, Any
 
 class PredictionRequest(BaseModel):
-    features: Optional[Dict[str, Any]] = Field(default=None)
-    data: Optional[Dict[str, Any]] = Field(default=None)
-    
-    model_config = ConfigDict(
-        extra="allow",          # Accepte aussi les champs supplémentaires
-        populate_by_name=True   # Accepte les alias
-    )
+    features: Dict[str, Any] = Field(..., description="Features du client")
 ```
 
 **Pourquoi cette approche ?**
-- ✅ Évite l'erreur 422 "Field required" avec Pydantic v2
-- ✅ Accepte 3 formats JSON différents (`features`, `data`, format plat)
-- ✅ Ignore les colonnes supplémentaires via `extra="allow"`
-- ✅ Compatible avec les requêtes du dashboard Streamlit
+- ✅ Schéma OpenAPI simple et explicite
+- ✅ Évite les erreurs de format côté client
+- ✅ Compatible avec le dashboard Streamlit
 
 ### Table de versions
 
@@ -377,7 +361,7 @@ La documentation interactive est disponible via :
 - ✅ **L'API accepte 17+ features** - Toutes les colonnes supplémentaires sont ignorées (mode `extra="allow"`)
 - ✅ **Colonnes manquantes comblées automatiquement** - Les ~200 colonnes d'agrégation sont imputées avec la médiane
 - ✅ **Feature engineering automatique** - Ratios, moyennes et conversions créés automatiquement
-- ✅ **Format du JSON flexible** - Accepte `{"features": {...}}`, `{"data": {...}}` ou format plat
+- ✅ **Format JSON unique** - Accepte uniquement `{"features": {...}}`
 - ⚠️ **Seuil par défaut : 0.44** - Optimisé pour minimiser le coût métier (FN=10, FP=1)
 
 ## 🐛 Problèmes Courants

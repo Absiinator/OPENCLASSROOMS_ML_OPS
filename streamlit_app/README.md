@@ -4,7 +4,8 @@
 
 Interface interactive pour expliquer les décisions d’octroi de crédit :
 - score et probabilité
-- comparaison client vs population
+- comparaison client vs population (section dans le scoring, possible sans prédiction)
+- radar par défaut basé sur `reports/feature_importance.csv` (issues des notebooks)
 - rapport de data drift (Evidently)
 - accessibilité WCAG
 - liens de documentation et statuts API/MLflow dans la sidebar
@@ -19,7 +20,7 @@ Interface interactive pour expliquer les décisions d’octroi de crédit :
 
 ## Variables d’environnement
 
-- `API_URL` : URL de l’API FastAPI (obligatoire)
+- `API_URL` : URL de l’API FastAPI (obligatoire, route `/predict`)
 - `MLFLOW_URL` : URL de l’UI MLflow (obligatoire)
 - `PORT` : port d’écoute Streamlit
 

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query, Depends, Body
+from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
@@ -280,9 +280,8 @@ async def predict(
     **Scores** : `EXT_SOURCE_1`, `EXT_SOURCE_2`, `EXT_SOURCE_3`, `REGION_RATING_CLIENT`
     **Ratios** : `CREDIT_INCOME_RATIO`, `ANNUITY_INCOME_RATIO`, `EXT_SOURCE_MEAN`
     
-    ## Format de requête (flexible)
+    ## Format de requête (unique)
     
-    **Format 1 (recommandé):**
     ```json
     {
         "features": {
@@ -296,25 +295,7 @@ async def predict(
     }
     ```
     
-    **Format 2 (compatibilité):**
-    ```json
-    {
-        "data": {
-            "AMT_INCOME_TOTAL": 150000.0,
-            "AMT_CREDIT": 500000.0
-        }
-    }
-    ```
-    
-    **Note** : L'API accepte les 17 features + colonnes supplémentaires (ignorées)
-    
-    ## Exemple curl
-    
-    ```bash
-    curl -X POST "https://votre-api.onrender.com/predict" \\
-         -H "Content-Type: application/json" \\
-         -d '{"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, "EXT_SOURCE_1": 0.5}}'
-    ```
+    **Note** : L'API traite uniquement le champ `features`.
     
     ## Réponse
     
@@ -328,7 +309,6 @@ async def predict(
     print(f"[API /predict] ===== NOUVELLE REQUÊTE =====")
     print(f"[API /predict] Type de request: {type(request)}")
     print(f"[API /predict] request.features: {request.features is not None}")
-    print(f"[API /predict] request.data: {request.data is not None}")
     if hasattr(request, '__pydantic_extra__'):
         print(f"[API /predict] Extra fields: {request.__pydantic_extra__}")
     
@@ -340,7 +320,7 @@ async def predict(
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        # Extraire les features du request (supporte 'features', 'data' ou format plat)
+        # Extraire les features du request
         client_dict = request.get_features_dict()
         print(f"[API /predict] Features extraites: {len(client_dict)} champs")
         print(f"[API /predict] Clés: {list(client_dict.keys())[:5]}...")
@@ -348,7 +328,7 @@ async def predict(
         # Vérifier que le payload contient des données
         if not isinstance(client_dict, dict) or not client_dict:
             print("[API /predict] ERREUR: Payload vide")
-            raise HTTPException(status_code=400, detail="Payload invalide: features ou data manquantes")
+            raise HTTPException(status_code=400, detail="Payload invalide: features manquantes")
 
         df = pd.DataFrame([client_dict])
         
@@ -401,29 +381,20 @@ async def predict(
 
 @app.post("/predict/simple", tags=["Prediction"])
 async def predict_simple(
-    body: Dict[str, Any] = Body(...),
+    request: PredictionRequest,
     threshold: Optional[float] = Query(None, ge=0, le=1),
     model_dep = Depends(get_model),
     preprocessor_dep = Depends(get_preprocessor)
 ):
     """
-    Endpoint de prédiction simplifié (sans validation Pydantic stricte).
+    Endpoint de prédiction simplifié.
     
-    Accepte n'importe quel JSON avec les features directement ou dans un champ "features".
-    
-    ## Format de requête
-    
+    Format attendu :
     ```json
     {"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, ...}}
     ```
-    
-    ou format plat:
-    
-    ```json
-    {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, ...}
-    ```
     """
-    print(f"[API /predict/simple] Body reçu: {list(body.keys())}")
+    print(f"[API /predict/simple] Requête reçue avec {len(request.features)} features")
     
     used_model = model_dep or model
     used_preprocessor = preprocessor_dep or preprocessor
@@ -432,15 +403,7 @@ async def predict_simple(
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        # Extraire les features du body
-        if "features" in body and isinstance(body["features"], dict):
-            client_dict = body["features"]
-        elif "data" in body and isinstance(body["data"], dict):
-            client_dict = body["data"]
-        else:
-            # Format plat: les features sont directement dans le body
-            client_dict = {k: v for k, v in body.items() if not k.startswith("_")}
-        
+        client_dict = request.get_features_dict()
         if not client_dict:
             raise HTTPException(status_code=400, detail="Aucune feature fournie")
         
@@ -608,6 +571,11 @@ async def explain_prediction(
     
     Utilise l'importance des features du modèle pour identifier
     les facteurs qui contribuent le plus à la décision.
+
+    Format attendu :
+    ```json
+    {"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, ...}}
+    ```
     """
     used_model = model_dep or model
     used_preprocessor = preprocessor_dep or preprocessor
@@ -617,12 +585,12 @@ async def explain_prediction(
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        # Extraire les features (supporte 'features' ou 'data')
+        # Extraire les features
         client_dict = request.get_features_dict()
 
         # Vérifier que le payload contient des données
         if not isinstance(client_dict, dict) or not client_dict:
-            raise HTTPException(status_code=400, detail="Payload invalide: features ou data manquantes")
+            raise HTTPException(status_code=400, detail="Payload invalide: features manquantes")
 
         df = pd.DataFrame([client_dict])
         
