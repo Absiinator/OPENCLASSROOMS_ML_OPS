@@ -65,17 +65,17 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
       
-      - name: 📋 Vérification de pyproject.toml
-        run: |
-          python -c "import sys; toml_lib = 'tomllib' if sys.version_info >= (3, 11) else 'tomli'; lib = __import__(toml_lib); lib.loads(open('pyproject.toml').read()); print('✅ pyproject.toml est valide')"
-      
-      - name: 📦 Installation des dépendances
+      - name: � Installation des dépendances
         run: |
           python -m pip install --upgrade pip wheel setuptools
           pip install tomli
           pip install -r api/requirements.txt
           pip install pytest pytest-cov pytest-xdist httpx
           pip install -e .
+      
+      - name: 📋 Vérification de pyproject.toml
+        run: |
+          python -c "import sys; toml_lib = 'tomllib' if sys.version_info >= (3, 11) else 'tomli'; lib = __import__(toml_lib); lib.loads(open('pyproject.toml').read()); print('✅ pyproject.toml est valide')"
       
       - name: 🧪 Exécution des tests (hors test_api.py)
         run: |
