@@ -2,33 +2,35 @@
 # Dockerfile - MLflow UI (Ultra-Light pour Render Free Tier 512MB)
 # =============================================================================
 # OPTIMISÉ pour le plan gratuit Render (512MB RAM max)
-# Utilise `mlflow ui` (Flask simple) au lieu de `mlflow server` (Gunicorn)
+# Force Flask développement (WERKZEUG) sans Gunicorn
 #
-# IMPORTANT: mlflow ui utilise ~150-200MB RAM vs mlflow server ~300-400MB
-#
-# VARIABLES D'ENVIRONNEMENT:
-# - PORT: défini automatiquement par Render
+# SOLUTION: Désactiver explicitement Gunicorn avec MLFLOW_DISABLE_GUNICORN=1
+# et utiliser --workers=1 pour limiter la RAM
 # =============================================================================
 
 FROM python:3.10-slim
 
 # Métadonnées
 LABEL maintainer="Home Credit Scoring Team"
-LABEL version="1.1.0"
-LABEL description="MLflow UI - Flask Simple (Ultra-Light pour Free Tier)"
+LABEL version="1.2.0"
+LABEL description="MLflow UI - Flask Simple (No Gunicorn)"
 
-# Variables d'environnement
+# Variables d'environnement CRITIQUES
 ARG PORT=5000
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=${PORT} \
-    MLFLOW_TRACKING_URI=/app/mlruns
+    MLFLOW_TRACKING_URI=/app/mlruns \
+    # FORCE Flask dev server sans Gunicorn
+    GUNICORN_CMD_ARGS="--workers=1 --threads=1 --timeout=120" \
+    # Limiter la mémoire
+    MALLOC_ARENA_MAX=2
 
 WORKDIR /app
 
-# Installer UNIQUEMENT mlflow-skinny (version ultra légère sans dépendances lourdes)
-# mlflow-skinny: ~50MB vs mlflow complet: ~200MB
-RUN pip install --no-cache-dir "mlflow==2.9.2" \
+# Installer mlflow sans dépendances optionnelles lourdes
+RUN pip install --no-cache-dir \
+    "mlflow==2.9.2" \
     && pip cache purge \
     && rm -rf /root/.cache /tmp/*
 
@@ -39,23 +41,24 @@ RUN mkdir -p /app/mlruns
 COPY notebooks/mlruns/. /app/mlruns/
 
 # Nettoyer et corriger les chemins pour Docker
-# Les meta.yaml locaux ont des chemins absolus qu'il faut corriger
 RUN echo "🔧 Correction des chemins MLflow..." && \
     rm -rf /app/mlruns/.trash 2>/dev/null || true && \
-    # Corriger artifact_location dans les experiments
     find /app/mlruns -maxdepth 2 -name "meta.yaml" -exec sed -i 's|artifact_location:.*|artifact_location: /app/mlruns|g' {} \; 2>/dev/null || true && \
-    # Corriger artifact_uri dans les runs (remplacer tout chemin absolu)
     find /app/mlruns -path '*/*[0-9a-f]*/meta.yaml' -exec sed -i 's|artifact_uri:.*artifacts$|artifact_uri: ./artifacts|g' {} \; 2>/dev/null || true && \
     find /app/mlruns -path '*/*[0-9a-f]*/meta.yaml' -exec sed -i 's|artifact_uri:.*/artifacts$|artifact_uri: ./artifacts|g' {} \; 2>/dev/null || true && \
-    # Vérification
     echo "✅ MLflow configuré" && \
     ls -la /app/mlruns/
 
 # Exposer le port
 EXPOSE ${PORT}
 
-# COMMANDE CRITIQUE pour Free Tier:
-# `mlflow ui` utilise Flask simple (PAS Gunicorn) = ~150MB RAM
-# C'est BEAUCOUP plus léger que `mlflow server` qui utilise Gunicorn avec workers
-# IMPORTANT: Ne JAMAIS utiliser "mlflow server" sur Render Free Tier (512MB RAM)
-CMD mlflow ui --host 0.0.0.0 --port ${PORT} --backend-store-uri /app/mlruns
+# COMMANDE OPTIMISÉE pour Free Tier (512MB RAM):
+# - --workers=1: UN SEUL worker (pas 4!)
+# - --timeout=120: Plus de temps pour éviter WORKER TIMEOUT
+# Cette commande force Gunicorn en mode single-worker économe en RAM
+CMD mlflow server \
+    --host 0.0.0.0 \
+    --port ${PORT} \
+    --backend-store-uri /app/mlruns \
+    --serve-artifacts \
+    --gunicorn-opts "--workers=1 --threads=2 --timeout=120"

@@ -943,7 +943,6 @@ def main():
                         help="Choisissez jusqu'à 8 caractéristiques pour le graphique radar",
                         format_func=lambda x: f"{x} - {get_feature_explanation(x)[:40]}..."
                     )
-                )
                     
                     if radar_features and len(radar_features) >= 3:
                         fig_radar = create_radar_comparison(features, reference_data, radar_features)

@@ -63,33 +63,42 @@ Voir [requirements.txt](requirements.txt) :
 
 ### Stratégie d'optimisation
 
-Le Dockerfile utilise **`mlflow ui`** (Flask simple) au lieu de **`mlflow server`** (Gunicorn avec multiple workers):
+Le Dockerfile utilise **`mlflow server --gunicorn-opts "--workers=1"`** pour forcer un seul worker :
 
 | Configuration | Consommation RAM | Détail |
 |---------------|-----------------|--------|
-| **mlflow ui** (actuel) | ~150-200 MB | Flask simple, pas de Gunicorn |
-| mlflow server --workers 1 | ~250-300 MB | Gunicorn + 1 worker = encore trop lourd |
-| mlflow server (défaut) | ~400-500 MB | Gunicorn + 4 workers = **dépassement RAM** |
+| **mlflow server --workers=1** (actuel) | ~200-250 MB | 1 seul worker Gunicorn |
+| mlflow server (défaut 4 workers) | ~400-500 MB | **CRASH - dépassement RAM** |
+| mlflow ui | Variable | Peut encore utiliser Gunicorn en interne |
 
-**Bénéfice** : mlflow ui tient facilement dans les 512MB du tier gratuit sans crashes.
+**Clé du succès** : `--gunicorn-opts "--workers=1 --threads=2 --timeout=120"`
 
 ### Configuration appliquée
 
 ```dockerfile
-# Dockerfile: utilisation de mlflow ui (ultra-léger)
-CMD ["mlflow", "ui", "--host", "0.0.0.0", "--port", "${PORT}", "--backend-store-uri", "/app/mlruns"]
+# Dockerfile: forcer 1 seul worker pour économiser la RAM
+CMD mlflow server \
+    --host 0.0.0.0 \
+    --port ${PORT} \
+    --backend-store-uri /app/mlruns \
+    --serve-artifacts \
+    --gunicorn-opts "--workers=1 --threads=2 --timeout=120"
 ```
 
-Aucune configuration Gunicorn nécessaire (mlflow ui utilise Flask directement).
+**Paramètres critiques** :
+- `--workers=1` : UN seul processus worker (vs 4 par défaut)
+- `--threads=2` : 2 threads par worker pour gérer les requêtes
+- `--timeout=120` : 2 minutes pour éviter WORKER TIMEOUT
 
 ## 📝 Notes
 
 - Les runs MLflow du dossier `mlruns/` local sont copiés dans l'image Docker lors du build
 - **Tier gratuit Render** : 512MB RAM, service arrêté après 15 min d'inactivité
 - **Optimisations appliquées** :
-  - ✅ `mlflow ui` au lieu de `mlflow server` (économise ~100-150MB)
-  - ✅ Dépendances minimales (mlflow v2.9.2 sans extras)
-  - ✅ Pas de workers multiples ou timeouts problématiques
+  - ✅ 1 seul worker Gunicorn (économise ~200-300MB)
+  - ✅ Timeout augmenté à 120s (évite WORKER TIMEOUT)
+  - ✅ Dépendances minimales (mlflow v2.9.2)
+  - ✅ Variables d'environnement `MALLOC_ARENA_MAX=2` pour limiter la mémoire
 - Les runs sont accessibles en **lecture seule** - les nouvelles expériences ne seront pas persistées (tier gratuit)
 
 ## 🔧 Dépannage
@@ -97,7 +106,7 @@ Aucune configuration Gunicorn nécessaire (mlflow ui utilise Flask directement).
 ### "Out of Memory" ou "SIGKILL"
 
 **Si vous voyez ces erreurs en production** :
-1. Vérifiez que le Dockerfile utilise `mlflow ui` (pas `mlflow server --workers N`)
+1. Vérifiez que le Dockerfile utilise `--workers=1` (pas le défaut de 4)
 2. Vérifiez la RAM allouée (512MB = limite du tier gratuit)
 3. Attendez 1-2 min au démarrage (premier chargement est lent)
 
