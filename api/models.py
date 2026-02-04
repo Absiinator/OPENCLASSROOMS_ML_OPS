@@ -6,7 +6,7 @@ Définit les modèles de données pour les requêtes et réponses de l'API.
 Compatible Pydantic v2 et FastAPI.
 """
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from typing import Optional, List, Dict, Any, Union
 from enum import Enum
 
@@ -43,10 +43,10 @@ class PredictionRequest(BaseModel):
          -d '{"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, "EXT_SOURCE_1": 0.5}}'
     ```
     """
-    # IMPORTANT: Pydantic v2 - déclarer simplement comme Optional sans Field
-    # pour éviter l'erreur 422 "Field required"
-    features: Optional[Dict[str, Any]] = None
-    data: Optional[Dict[str, Any]] = None
+    # Pydantic v2: Pour rendre vraiment optionnel dans OpenAPI, utiliser Field(default=None)
+    # Même avec Optional[T], le schéma considère le champ comme requis sans Field
+    features: Optional[Dict[str, Any]] = Field(default=None, description="Features du client (format principal)")
+    data: Optional[Dict[str, Any]] = Field(default=None, description="Données alternatives (format de compatibilité)")
     
     # Configuration Pydantic v2
     model_config = ConfigDict(
@@ -78,6 +78,13 @@ class PredictionRequest(BaseModel):
             ]
         }
     )
+
+    @model_validator(mode='after')
+    def validate_data_presence(self) -> 'PredictionRequest':
+        """Valider qu'au moins features ou data est fourni."""
+        if not self.features and not self.data:
+            raise ValueError("Au moins un des champs 'features' ou 'data' doit être fourni")
+        return self
     
     def get_features_dict(self) -> Dict[str, Any]:
         """Retourne les features depuis le payload reçu.

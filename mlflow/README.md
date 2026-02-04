@@ -76,19 +76,22 @@ Le Dockerfile utilise **`mlflow server --gunicorn-opts "--workers=1"`** pour for
 ### Configuration appliquée
 
 ```dockerfile
-# Dockerfile: forcer 1 seul worker pour économiser la RAM
+# Correction des chemins absolus
+RUN find /app/mlruns -maxdepth 2 -name "meta.yaml" -exec sed -i 's|artifact_location:.*|artifact_location: file:///app/mlruns|g' {} \;
+
+# Commande avec URI file://
 CMD mlflow server \
     --host 0.0.0.0 \
     --port ${PORT} \
-    --backend-store-uri /app/mlruns \
+    --backend-store-uri file:///app/mlruns \
     --serve-artifacts \
     --gunicorn-opts "--workers=1 --threads=2 --timeout=120"
 ```
 
-**Paramètres critiques** :
-- `--workers=1` : UN seul processus worker (vs 4 par défaut)
-- `--threads=2` : 2 threads par worker pour gérer les requêtes
-- `--timeout=120` : 2 minutes pour éviter WORKER TIMEOUT
+**Résolution des erreurs** :
+- ✅ `INTERNAL_ERROR: Yaml file does not exist` → Chemins absolus `file:///app/mlruns`
+- ✅ `500 Internal Server Error` → URI backend store correcte
+- ✅ Chemins relatifs corrigés vers absolus lors du build Docker
 
 ## 📝 Notes
 

@@ -43,9 +43,12 @@ COPY notebooks/mlruns/. /app/mlruns/
 # Nettoyer et corriger les chemins pour Docker
 RUN echo "🔧 Correction des chemins MLflow..." && \
     rm -rf /app/mlruns/.trash 2>/dev/null || true && \
-    find /app/mlruns -maxdepth 2 -name "meta.yaml" -exec sed -i 's|artifact_location:.*|artifact_location: /app/mlruns|g' {} \; 2>/dev/null || true && \
-    find /app/mlruns -path '*/*[0-9a-f]*/meta.yaml' -exec sed -i 's|artifact_uri:.*artifacts$|artifact_uri: ./artifacts|g' {} \; 2>/dev/null || true && \
-    find /app/mlruns -path '*/*[0-9a-f]*/meta.yaml' -exec sed -i 's|artifact_uri:.*/artifacts$|artifact_uri: ./artifacts|g' {} \; 2>/dev/null || true && \
+    # Corriger artifact_location dans les experiments (chemin absolu)
+    find /app/mlruns -maxdepth 2 -name "meta.yaml" -exec sed -i 's|artifact_location:.*|artifact_location: file:///app/mlruns|g' {} \; 2>/dev/null || true && \
+    # Corriger artifact_uri dans les runs (chemin absolu vers artifacts)
+    find /app/mlruns -path '*/*[0-9a-f]*/meta.yaml' -exec sed -i 's|artifact_uri:.*|artifact_uri: file:///app/mlruns|g' {} \; 2>/dev/null || true && \
+    # Créer les répertoires artifacts manquants
+    find /app/mlruns -path '*/*[0-9a-f]*/meta.yaml' -exec mkdir -p {}/artifacts \; 2>/dev/null || true && \
     echo "✅ MLflow configuré" && \
     ls -la /app/mlruns/
 
@@ -55,10 +58,10 @@ EXPOSE ${PORT}
 # COMMANDE OPTIMISÉE pour Free Tier (512MB RAM):
 # - --workers=1: UN SEUL worker (pas 4!)
 # - --timeout=120: Plus de temps pour éviter WORKER TIMEOUT
-# Cette commande force Gunicorn en mode single-worker économe en RAM
+# - file:// URI pour backend store
 CMD mlflow server \
     --host 0.0.0.0 \
     --port ${PORT} \
-    --backend-store-uri /app/mlruns \
+    --backend-store-uri file:///app/mlruns \
     --serve-artifacts \
     --gunicorn-opts "--workers=1 --threads=2 --timeout=120"
