@@ -20,7 +20,12 @@ Prédire la **probabilité de défaut de paiement** d'un client demandant un cr�
 |----------|-------------|
 | [README.md](README.md) | Ce fichier - Vue d'ensemble du projet |
 | [RENDER_SETUP.md](RENDER_SETUP.md) | Guide complet de déploiement sur Render (API, Dashboard, MLflow) |
+| [api/README.md](api/README.md) | README spécifique de l’API (objectif, endpoints, artefacts) |
+| [streamlit_app/README.md](streamlit_app/README.md) | README spécifique du dashboard Streamlit |
+| [mlflow/README.md](mlflow/README.md) | README spécifique du service MLflow |
 | [tests/README.md](tests/README.md) | Documentation des tests unitaires et d'intégration |
+| [presentation_outline.txt](presentation_outline.txt) | Plan de présentation - Phase 1 (MLOps) |
+| [presentation_outline_phase2.txt](presentation_outline_phase2.txt) | Plan de présentation - Phase 2 (Dashboard + Veille) |
 
 ## 🏗️ Architecture du projet
 

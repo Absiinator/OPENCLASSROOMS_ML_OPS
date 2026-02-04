@@ -23,6 +23,7 @@ import sys
 import urllib.request
 import urllib.error
 from pathlib import Path
+from typing import Dict, Any, Optional, List
 
 # Ajouter le répertoire courant au path Python
 sys.path.insert(0, str(Path(__file__).parent))
@@ -138,6 +139,11 @@ def interpret_score(probability: float, threshold: float) -> dict:
     }
 
 
+def get_feature_explanation(feature_name: str) -> str:
+    """Retourne une explication en langage naturel d'une feature."""
+    return FEATURE_EXPLANATIONS.get(feature_name, f"{feature_name}")
+
+
 def check_mlflow_health(url: str) -> bool:
     """Vérifie si l'UI MLflow est accessible."""
     if not url:
@@ -188,42 +194,109 @@ def create_gauge_chart(probability: float, threshold: float) -> go.Figure:
     return fig
 
 
-def create_comparison_chart(client_value: float, ref_data: pd.Series, feature_name: str) -> go.Figure:
+def create_comparison_chart(
+    client_value: float,
+    feature_name: str,
+    reference_data: pd.DataFrame,
+    group_filter: Optional[str] = None
+) -> Optional[go.Figure]:
     """Crée un histogramme de comparaison client vs population."""
-    # Filtrer uniquement les valeurs numériques valides
-    ref_numeric = pd.to_numeric(ref_data, errors='coerce').dropna()
-    
-    if len(ref_numeric) == 0:
+    if feature_name not in reference_data.columns:
         return None
-    
+
+    data = reference_data[feature_name].dropna()
+
+    if group_filter and group_filter != "Tous les clients":
+        if "TARGET" in reference_data.columns:
+            if group_filter == "Clients sans défaut (TARGET=0)":
+                data = reference_data[reference_data["TARGET"] == 0][feature_name].dropna()
+            elif group_filter == "Clients en défaut (TARGET=1)":
+                data = reference_data[reference_data["TARGET"] == 1][feature_name].dropna()
+
+    if data.empty:
+        return None
+
     fig = go.Figure()
-    
-    # Histogramme de la population
     fig.add_trace(go.Histogram(
-        x=ref_numeric,
-        name="Population",
+        x=data,
+        name="Distribution",
         opacity=0.7,
-        marker_color='#3498db'
+        marker_color="#4169E1"
     ))
-    
-    # Ligne verticale pour le client
+
     fig.add_vline(
         x=client_value,
         line_dash="dash",
-        line_color="red",
+        line_color="#C41E3A",
         line_width=3,
         annotation_text=f"Client: {client_value:.2f}",
         annotation_position="top"
     )
-    
+
+    percentile = (data < client_value).mean() * 100
     fig.update_layout(
-        title=f"Position du client - {feature_name}",
+        title=f"Distribution de {feature_name} (client au {percentile:.0f}e percentile)",
         xaxis_title=feature_name,
         yaxis_title="Nombre de clients",
-        height=350,
-        showlegend=True
+        height=400,
+        showlegend=False
     )
-    
+
+    return fig
+
+
+def create_radar_comparison(
+    client_features: Dict[str, float],
+    reference_data: pd.DataFrame,
+    selected_features: List[str]
+) -> Optional[go.Figure]:
+    """Crée un graphique radar pour comparer plusieurs features."""
+    normalized_client = []
+    normalized_mean = []
+
+    for feat in selected_features:
+        if feat in reference_data.columns and feat in client_features:
+            ref_data = reference_data[feat].dropna()
+            if ref_data.empty:
+                continue
+            min_val, max_val = ref_data.min(), ref_data.max()
+            if max_val > min_val:
+                client_norm = (client_features[feat] - min_val) / (max_val - min_val)
+                mean_norm = (ref_data.mean() - min_val) / (max_val - min_val)
+            else:
+                client_norm, mean_norm = 0.5, 0.5
+            normalized_client.append(client_norm)
+            normalized_mean.append(mean_norm)
+
+    if not normalized_client:
+        return None
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(
+        r=normalized_mean + [normalized_mean[0]],
+        theta=selected_features + [selected_features[0]],
+        fill='toself',
+        fillcolor='rgba(65, 105, 225, 0.3)',
+        line_color='#4169E1',
+        name='Moyenne population'
+    ))
+    fig.add_trace(go.Scatterpolar(
+        r=normalized_client + [normalized_client[0]],
+        theta=selected_features + [selected_features[0]],
+        fill='toself',
+        fillcolor='rgba(196, 30, 58, 0.3)',
+        line_color='#C41E3A',
+        name='Client actuel'
+    ))
+
+    fig.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+        showlegend=True,
+        title={'text': "Comparaison multi-critères", 'font': {'size': 16}},
+        height=500,
+        paper_bgcolor='white'
+    )
+
     return fig
 
 
@@ -231,42 +304,85 @@ def create_comparison_chart(client_value: float, ref_data: pd.Series, feature_na
 # Interface utilisateur principale
 # ============================================
 
-def render_sidebar():
-    """Affiche la sidebar avec statut API et navigation."""
+def render_sidebar(reference_data: pd.DataFrame):
+    """Affiche la sidebar avec navigation, docs et statuts."""
     with st.sidebar:
         st.title("🏦 Home Credit")
-        st.markdown("---")
-        
-        # Statut de l'API
-        api_ok = check_api_health()
-        if api_ok:
-            st.success("✅ API connectée")
-            model_info = get_model_info()
-            if model_info:
-                st.info(f"📊 Seuil optimal: {model_info.get('optimal_threshold', 0.44)}")
-        else:
-            st.error("❌ API non disponible")
-            st.info(f"URL: {API_URL}")
+        st.divider()
 
-        # Statut MLflow
+        # Navigation
+        st.header("📍 Navigation")
+        nav_options = [
+            ("🎯 Scoring", "scoring"),
+            ("📊 Comparaison", "comparison"),
+            ("📈 Data Drift", "drift"),
+            ("📖 Documentation", "docs")
+        ]
+        if "current_page" not in st.session_state:
+            st.session_state.current_page = "scoring"
+        for label, page_key in nav_options:
+            btn_type = "primary" if st.session_state.current_page == page_key else "secondary"
+            if st.button(label, key=f"nav_{page_key}", use_container_width=True, type=btn_type):
+                st.session_state.current_page = page_key
+                st.rerun()
+
+        st.divider()
+
+        # Documentation
+        st.header("🔗 Documentation")
+        with st.expander("🔍 URLs configurées", expanded=False):
+            st.code(f"API_URL={API_URL}")
+            st.code(f"MLFLOW_URL={MLFLOW_URL}")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.link_button("Swagger", f"{API_URL}/docs", use_container_width=True)
+        with col2:
+            st.link_button("ReDoc", f"{API_URL}/redoc", use_container_width=True)
+        st.link_button("MLflow UI", MLFLOW_URL, use_container_width=True)
+
+        st.divider()
+
+        # État des services
+        st.header("🏥 État")
+        api_ok = check_api_health()
         mlflow_ok = check_mlflow_health(MLFLOW_URL)
-        if mlflow_ok:
-            st.success("✅ MLflow accessible")
+        drift_exists = os.path.exists(DRIFT_REPORT_PATH)
+        st.write(f"{'✅' if api_ok else '⚠️'} API: {'OK' if api_ok else 'Hors ligne'}")
+        st.write(f"{'✅' if mlflow_ok else '⚠️'} MLflow: {'OK' if mlflow_ok else 'Hors ligne'}")
+        st.write(f"{'✅' if drift_exists else '⚠️'} Drift: {'OK' if drift_exists else 'Absent'}")
+
+        st.divider()
+
+        # Modèle
+        st.header("🤖 Modèle")
+        model_info = get_model_info()
+        if model_info:
+            st.metric("Seuil", f"{model_info.get('optimal_threshold', 0.44):.2%}")
         else:
-            st.warning("⚠️ MLflow indisponible")
-        if MLFLOW_URL:
-            st.markdown(f"[Ouvrir MLflow UI]({MLFLOW_URL})")
-        
-        st.markdown("---")
-        st.markdown("### ℹ️ À propos")
-        st.markdown("""
-        Cette application permet d'évaluer le risque de défaut 
-        de paiement pour les demandes de crédit.
-        
-        **Seuil de décision**: 0.44 (optimisé coût métier)
-        - Coût Faux Négatif: 10
-        - Coût Faux Positif: 1
-        """)
+            st.caption("Infos indisponibles")
+
+        st.divider()
+
+        # Dataset
+        st.header("📊 Dataset")
+        if reference_data is not None and not reference_data.empty:
+            st.metric("Clients", f"{len(reference_data):,}")
+            if "TARGET" in reference_data.columns:
+                st.metric("Taux défaut", f"{reference_data['TARGET'].mean():.1%}")
+            with st.expander("💰 Finances"):
+                if "AMT_INCOME_TOTAL" in reference_data.columns:
+                    st.write(f"Revenu: {reference_data['AMT_INCOME_TOTAL'].median():,.0f}€")
+                if "AMT_CREDIT" in reference_data.columns:
+                    st.write(f"Crédit: {reference_data['AMT_CREDIT'].median():,.0f}€")
+            with st.expander("📊 Scores"):
+                for col in ["EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3"]:
+                    if col in reference_data.columns:
+                        st.write(f"{col}: {reference_data[col].median():.3f}")
+        else:
+            st.warning("📂 Données manquantes")
+
+        st.divider()
+        st.caption("v1.0.0 • Home Credit Scoring")
 
 
 def render_prediction_tab():
@@ -275,7 +391,8 @@ def render_prediction_tab():
     
     # Vérifier l'API
     if not check_api_health():
-        st.error("⚠️ L'API n'est pas disponible. Veuillez réessayer plus tard.")
+        st.error("⚠️ L'API n'est pas disponible. Vérifiez l'URL et le déploiement.")
+        st.info(f"API_URL: {API_URL}")
         return
     
     st.markdown("### Saisie des informations client")
@@ -380,6 +497,7 @@ def render_prediction_tab():
     
     # Calculer les ratios automatiquement
     features = calculate_ratios(st.session_state.client_features)
+    st.session_state.current_features = features
     
     st.markdown("---")
     
@@ -425,97 +543,202 @@ def render_prediction_tab():
             # Stocker pour comparaison
             st.session_state.last_prediction = result
             st.session_state.last_features = features
+
+            # Résumé descriptif du client
+            st.subheader("👤 Résumé du profil client")
+            profile_col1, profile_col2, profile_col3 = st.columns(3)
+            with profile_col1:
+                st.markdown("**Situation financière**")
+                st.write(f"- Revenu: {features['AMT_INCOME_TOTAL']:,.0f} €")
+                st.write(f"- Crédit demandé: {features['AMT_CREDIT']:,.0f} €")
+                st.write(f"- Ratio crédit/revenu: {features['CREDIT_INCOME_RATIO']:.2f}")
+            with profile_col2:
+                st.markdown("**Situation personnelle**")
+                age_years = abs(int(features['DAYS_BIRTH'])) // 365
+                employed_years = abs(int(features['DAYS_EMPLOYED'])) // 365
+                st.write(f"- Âge: {age_years} ans")
+                st.write(f"- Ancienneté emploi: {employed_years} ans")
+                st.write(f"- Enfants: {features['CNT_CHILDREN']}")
+            with profile_col3:
+                st.markdown("**Scores de crédit**")
+                st.write(f"- Score moyen: {features['EXT_SOURCE_MEAN']:.2f}")
+                st.write(f"- Propriétaire: {'Oui' if features['FLAG_OWN_REALTY'] else 'Non'}")
+                st.write(f"- Véhicule: {'Oui' if features['FLAG_OWN_CAR'] else 'Non'}")
             
         else:
-            error_msg = result.get("detail", "Erreur inconnue") if result else "Pas de réponse"
-            st.error(f"❌ Erreur: {error_msg}")
+            status_code = result.get("status_code") if result else None
+            detail = result.get("detail", "Erreur inconnue") if result else "Pas de réponse"
+            if isinstance(detail, dict):
+                detail = detail.get("detail", detail)
+            detail = str(detail)
+            if status_code == 404:
+                st.error("❌ Endpoint API introuvable (404).")
+                st.info(f"API_URL: {API_URL}")
+                endpoint = result.get("endpoint", "/predict/simple") if result else "/predict/simple"
+                st.info(f"Endpoint attendu: {API_URL}{endpoint}")
+            else:
+                st.error(f"❌ Erreur API ({status_code}): {detail}")
 
 
 def render_comparison_tab():
     """Onglet comparaison avec la population."""
     st.header("📊 Comparaison avec la population")
-    
-    # Charger données de référence
     ref_data = load_reference_data()
-    
     if ref_data.empty:
-        st.warning("Données de référence non disponibles.")
+        st.warning("⚠️ Données de référence non disponibles.")
         return
-    
-    # Vérifier qu'on a des features à comparer
-    if 'last_features' not in st.session_state:
-        st.info("💡 Effectuez d'abord une prédiction dans l'onglet Scoring pour comparer le client.")
+
+    features = st.session_state.get("current_features") or st.session_state.get("last_features")
+    if not features:
+        st.info("💡 Saisissez d'abord un client dans l'onglet Scoring.")
         return
-    
-    features = st.session_state.last_features
-    
-    # Sélectionner les features à comparer (uniquement numériques)
+
+    st.markdown("""
+    **Comparez les caractéristiques du client avec l'ensemble de la population ou un groupe de clients similaires.**
+    """)
+
+    group_filter = st.selectbox(
+        "🎯 Groupe de comparaison",
+        ["Tous les clients", "Clients sans défaut (TARGET=0)", "Clients en défaut (TARGET=1)"],
+        help="Sélectionnez le groupe avec lequel comparer le client"
+    )
+
     numeric_cols = ref_data.select_dtypes(include=[np.number]).columns.tolist()
-    available_features = [f for f in features.keys() if f in numeric_cols]
-    
+    exclude_cols = ["SK_ID_CURR", "TARGET", "index"]
+    available_features = [f for f in numeric_cols if f not in exclude_cols and f in features]
+
     if not available_features:
         st.warning("Aucune feature comparable disponible.")
         return
-    
-    selected_feature = st.selectbox(
-        "Sélectionnez une caractéristique à comparer",
-        available_features,
-        format_func=lambda x: f"{x} - {FEATURE_EXPLANATIONS.get(x, '')[:50]}..."
-    )
-    
-    if selected_feature and selected_feature in ref_data.columns:
-        client_val = features.get(selected_feature)
-        ref_col = ref_data[selected_feature]
-        
-        # Créer le graphique de comparaison
-        fig = create_comparison_chart(client_val, ref_col, selected_feature)
-        
-        if fig:
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Statistiques
-            ref_numeric = pd.to_numeric(ref_col, errors='coerce').dropna()
-            if len(ref_numeric) > 0:
-                percentile = (ref_numeric < client_val).mean() * 100
-                
-                st.markdown(f"""
-                ### Statistiques
-                - **Valeur client**: {client_val:.2f}
-                - **Médiane population**: {ref_numeric.median():.2f}
-                - **Percentile du client**: {percentile:.1f}%
-                
-                📌 *Le client se situe au {percentile:.0f}ème percentile, c'est-à-dire que {percentile:.0f}% de la population a une valeur inférieure.*
-                """)
+
+    explained_features = list(FEATURE_EXPLANATIONS.keys())
+    priority_features = [f for f in explained_features if f in available_features]
+    other_features = [f for f in available_features if f not in priority_features]
+    available_features = priority_features + sorted(other_features)
+
+    tab1, tab2, tab3 = st.tabs([
+        "🎯 Vue Radar",
+        "📈 Comparaison détaillée",
+        "📋 Statistiques complètes"
+    ])
+
+    with tab1:
+        st.subheader("🎯 Comparaison multi-critères")
+        default_radar = [f for f in [
+            "AMT_INCOME_TOTAL", "AMT_CREDIT", "AMT_ANNUITY",
+            "EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3",
+            "CREDIT_INCOME_RATIO"
+        ] if f in available_features][:6]
+
+        radar_features = st.multiselect(
+            "Caractéristiques à comparer (3-8 recommandé)",
+            available_features,
+            default=default_radar,
+            help="Choisissez jusqu'à 8 caractéristiques pour le radar",
+            format_func=lambda x: f"{x} - {get_feature_explanation(x)[:40]}..."
+        )
+
+        if radar_features and len(radar_features) >= 3:
+            fig_radar = create_radar_comparison(features, ref_data, radar_features)
+            if fig_radar:
+                st.plotly_chart(fig_radar, use_container_width=True)
+            else:
+                st.warning("Impossible de créer le radar.")
         else:
-            st.warning("Impossible de créer le graphique pour cette caractéristique.")
-    
-    # Afficher l'explication de la feature
-    if selected_feature:
-        with st.expander(f"ℹ️ Signification de {selected_feature}"):
-            st.markdown(FEATURE_EXPLANATIONS.get(selected_feature, "Pas de description disponible."))
+            st.info("Sélectionnez au moins 3 caractéristiques.")
+
+    with tab2:
+        st.subheader("📈 Comparaison détaillée par caractéristique")
+        selected_feature = st.selectbox(
+            "Sélectionnez une caractéristique",
+            available_features,
+            help="Voir la distribution et la position du client",
+            format_func=lambda x: f"{x}"
+        )
+
+        st.info(f"**{selected_feature}**: {get_feature_explanation(selected_feature)}")
+        client_value = features.get(selected_feature)
+        if client_value is None:
+            st.warning("Valeur client indisponible pour cette caractéristique.")
+        else:
+            fig = create_comparison_chart(client_value, selected_feature, ref_data, group_filter)
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+                ref_col = ref_data[selected_feature].dropna()
+                percentile = (ref_col < client_value).mean() * 100 if len(ref_col) > 0 else 0
+                stat_col1, stat_col2, stat_col3 = st.columns(3)
+                with stat_col1:
+                    st.metric("Valeur client", f"{client_value:,.2f}")
+                with stat_col2:
+                    st.metric("Moyenne population", f"{ref_col.mean():,.2f}")
+                with stat_col3:
+                    st.metric("Percentile", f"{percentile:.0f}%")
+
+                if percentile < 25:
+                    st.warning("⚠️ Client dans les 25% les plus bas.")
+                elif percentile > 75:
+                    st.success("✅ Client dans les 25% les plus hauts.")
+                else:
+                    st.info("ℹ️ Client dans la moyenne.")
+            else:
+                st.warning("Impossible de créer le graphique.")
+
+    with tab3:
+        st.subheader("📋 Statistiques complètes du client")
+        comparison_data = []
+        for feat in available_features:
+            if feat in ref_data.columns:
+                client_val = features.get(feat)
+                if client_val is None:
+                    continue
+                ref_col = ref_data[feat].dropna()
+                if len(ref_col) == 0:
+                    continue
+                percentile = (ref_col < client_val).mean() * 100
+                comparison_data.append({
+                    "Caractéristique": feat,
+                    "Valeur client": f"{client_val:,.2f}",
+                    "Moyenne pop.": f"{ref_col.mean():,.2f}",
+                    "Médiane pop.": f"{ref_col.median():,.2f}",
+                    "Percentile": f"{percentile:.0f}%",
+                })
+
+        if comparison_data:
+            df_comparison = pd.DataFrame(comparison_data)
+            st.dataframe(df_comparison, use_container_width=True, hide_index=True)
+        else:
+            st.info("Aucune statistique disponible.")
 
 
 def render_drift_tab():
     """Onglet rapport de Data Drift (Evidently)."""
     st.header("📈 Analyse du Data Drift")
-    
+
     st.markdown("""
-    Le Data Drift analyse la différence de distribution entre les données d'entraînement 
-    et les nouvelles données en production. Un drift significatif peut indiquer que le 
-    modèle doit être réentraîné.
-    """)
+    ## Rapport Evidently
     
+    Le rapport de data drift permet de détecter les dérives entre:
+    - **Données d'entraînement** (référence)
+    - **Données de production** (nouvelles données)
+    
+    **Métriques surveillées**:
+    - Distribution des features
+    - Valeurs manquantes
+    - Corrélations
+    - Tests statistiques (Kolmogorov-Smirnov, Chi²)
+    """)
+
     if os.path.exists(DRIFT_REPORT_PATH):
         try:
             with open(DRIFT_REPORT_PATH, 'r', encoding='utf-8') as f:
                 html_content = f.read()
-            
-            st.components.v1.html(html_content, height=800, scrolling=True)
+            st.markdown("### Rapport complet Evidently")
+            st.components.v1.html(html_content, height=1200, scrolling=True)
         except Exception as e:
             st.error(f"Erreur lors du chargement du rapport: {e}")
     else:
         st.warning("📋 Rapport Evidently non disponible.")
-        st.info(f"Chemin attendu: {DRIFT_REPORT_PATH}")
+        st.info("Le rapport est généré par le notebook `notebooks/04_Drift_Evidently.ipynb`.")
 
 
 def render_documentation_tab():
@@ -562,6 +785,11 @@ def render_documentation_tab():
     Le modèle minimise: `10 × FN + 1 × FP`
     """)
 
+    st.markdown("### Liens utiles")
+    st.markdown(f"- API Swagger: {API_URL}/docs")
+    st.markdown(f"- API ReDoc: {API_URL}/redoc")
+    st.markdown(f"- MLflow UI: {MLFLOW_URL}")
+
 
 # ============================================
 # Point d'entrée principal
@@ -569,28 +797,26 @@ def render_documentation_tab():
 
 def main():
     """Fonction principale de l'application."""
+    st.title("🏦 Home Credit - Outil de Scoring")
+    st.markdown("""
+    **Outil d'aide à la décision pour l'octroi de crédit**
     
-    # Sidebar
-    render_sidebar()
-    
-    # Onglets principaux
-    tabs = st.tabs([
-        "🎯 Scoring",
-        "📊 Comparaison",
-        "📈 Data Drift",
-        "📖 Documentation"
-    ])
-    
-    with tabs[0]:
+    Cette application évalue le risque de défaut de paiement et fournit une interprétation
+    claire du score pour chaque demande de crédit.
+    """)
+
+    reference_data = load_reference_data()
+    render_sidebar(reference_data)
+
+    current_page = st.session_state.get("current_page", "scoring")
+
+    if current_page == "scoring":
         render_prediction_tab()
-    
-    with tabs[1]:
+    elif current_page == "comparison":
         render_comparison_tab()
-    
-    with tabs[2]:
+    elif current_page == "drift":
         render_drift_tab()
-    
-    with tabs[3]:
+    elif current_page == "docs":
         render_documentation_tab()
 
 

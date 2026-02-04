@@ -33,3 +33,10 @@ L’API charge automatiquement les artefacts présents dans `models/` à la raci
 
 - Les données sont téléchargées dans l’image Docker au build (pas de Git LFS)
 - Le rapport Evidently est servi par `/data/drift` si `reports/` est présent
+
+## Liens utiles
+
+- [README principal](../README.md)
+- [Guide Render](../RENDER_SETUP.md)
+- [README Dashboard](../streamlit_app/README.md)
+- [README MLflow](../mlflow/README.md)

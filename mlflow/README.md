@@ -81,6 +81,13 @@ Le Dockerfile :
   - ✅ Variables d'environnement `MALLOC_ARENA_MAX=2` pour limiter la mémoire
 - Les runs sont accessibles en **lecture seule** - les nouvelles expériences ne seront pas persistées (tier gratuit)
 
+## Liens utiles
+
+- [README principal](../README.md)
+- [Guide Render](../RENDER_SETUP.md)
+- [README API](../api/README.md)
+- [README Dashboard](../streamlit_app/README.md)
+
 ## 🔧 Dépannage
 
 ### "Out of Memory" ou "SIGKILL"

@@ -87,29 +87,41 @@ def predict_client(features: Dict[str, Any]) -> Dict[str, Any]:
         Ou dict avec "error" si échec
     """
     try:
-        # Utiliser /predict/simple qui accepte les JSON bruts sans validation Pydantic
         payload = {"features": features}
-        
+
+        # Endpoint principal (tolère les JSON bruts)
+        endpoint = "/predict/simple"
         response = requests.post(
-            f"{API_URL}/predict/simple",
+            f"{API_URL}{endpoint}",
             json=payload,
             timeout=TIMEOUT_PREDICT,
             headers={"Content-Type": "application/json"}
         )
-        
+
+        # Fallback si l'endpoint n'existe pas (API plus ancienne)
+        if response.status_code == 404:
+            endpoint = "/predict"
+            response = requests.post(
+                f"{API_URL}{endpoint}",
+                json=payload,
+                timeout=TIMEOUT_PREDICT,
+                headers={"Content-Type": "application/json"}
+            )
+
         if response.status_code == 200:
             return response.json()
-        else:
-            # Extraire le détail de l'erreur
-            try:
-                error_detail = response.json()
-            except Exception:
-                error_detail = response.text
-            return {
-                "error": True,
-                "status_code": response.status_code,
-                "detail": error_detail
-            }
+
+        # Extraire le détail de l'erreur
+        try:
+            error_detail = response.json()
+        except Exception:
+            error_detail = response.text
+        return {
+            "error": True,
+            "status_code": response.status_code,
+            "detail": error_detail,
+            "endpoint": endpoint
+        }
             
     except requests.exceptions.ConnectionError:
         return {"error": True, "detail": "API non accessible"}

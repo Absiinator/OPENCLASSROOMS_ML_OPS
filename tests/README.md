@@ -27,3 +27,8 @@ Les fichiers couvrent le coût métier, le prétraitement et l’API.
 - Tests organisés en classes par fonctionnalité
 - Noms descriptifs: `test_<fonction>_<scenario>`
 - Fixtures partagées dans `conftest.py`
+
+## Liens utiles
+
+- [README principal](../README.md)
+- [README API](../api/README.md)
