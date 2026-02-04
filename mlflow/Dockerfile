@@ -55,6 +55,7 @@ RUN echo "🔧 Correction des chemins MLflow..." && \
 EXPOSE ${PORT}
 
 # COMMANDE CRITIQUE pour Free Tier:
-# `mlflow ui` utilise Flask simple (pas Gunicorn) = ~150MB RAM
+# `mlflow ui` utilise Flask simple (PAS Gunicorn) = ~150MB RAM
 # C'est BEAUCOUP plus léger que `mlflow server` qui utilise Gunicorn avec workers
-CMD ["sh", "-c", "echo '[MLflow UI] Démarrage sur port ${PORT} (Flask simple pour 512MB RAM)' && mlflow ui --host 0.0.0.0 --port ${PORT} --backend-store-uri /app/mlruns"]
+# IMPORTANT: Ne JAMAIS utiliser "mlflow server" sur Render Free Tier (512MB RAM)
+CMD mlflow ui --host 0.0.0.0 --port ${PORT} --backend-store-uri /app/mlruns

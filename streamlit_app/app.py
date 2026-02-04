@@ -258,20 +258,70 @@ def interpret_score(probability: float, threshold: float) -> Dict[str, str]:
     }
 
 
+# Dictionnaire global des explications de features
+FEATURE_EXPLANATIONS = {
+    # Revenus et Crédit
+    "AMT_INCOME_TOTAL": "💰 Revenu annuel total du client (€). Plus élevé = meilleure capacité de remboursement",
+    "AMT_CREDIT": "💳 Montant total du crédit demandé (€). Plus élevé = engagement financier plus important",
+    "AMT_ANNUITY": "📅 Montant de l'annuité mensuelle (€). Plus élevé = charge de remboursement plus lourde",
+    "AMT_GOODS_PRICE": "🛒 Prix des biens financés (€). Différence avec AMT_CREDIT = frais et intérêts",
+    
+    # Scores externes (très importants pour le modèle)
+    "EXT_SOURCE_1": "📊 Score de crédit externe #1 (bureau de crédit). Échelle 0-1. Plus élevé (>0.5) = excellent historique de crédit, faible risque",
+    "EXT_SOURCE_2": "📊 Score de crédit externe #2 (autre source). Échelle 0-1. Plus élevé (>0.5) = bon comportement financier historique",
+    "EXT_SOURCE_3": "📊 Score de crédit externe #3 (source complémentaire). Échelle 0-1. Plus élevé (>0.5) = profil de remboursement fiable",
+    "EXT_SOURCE_MEAN": "📊 Moyenne des 3 scores externes. Indicateur synthétique de solvabilité. >0.5 = bon profil",
+    
+    # Ratios calculés
+    "CREDIT_INCOME_RATIO": "📈 Ratio Crédit/Revenu. Plus bas (<3) = meilleure capacité. >5 = risque élevé",
+    "ANNUITY_INCOME_RATIO": "📈 Ratio Annuité/Revenu. Plus bas (<0.3) = charge supportable. >0.5 = risque",
+    
+    # Informations temporelles
+    "DAYS_BIRTH": "🎂 Âge du client (jours négatifs). Ex: -12000 ≈ 33 ans. Plus âgé = généralement plus stable",
+    "DAYS_EMPLOYED": "💼 Ancienneté emploi actuel (jours négatifs). Ex: -2000 ≈ 5.5 ans. Plus long = plus stable",
+    "DAYS_REGISTRATION": "📝 Jours depuis inscription. Ancienneté de la relation client",
+    "DAYS_ID_PUBLISH": "🪪 Jours depuis émission pièce d'identité",
+    
+    # Informations personnelles
+    "CNT_CHILDREN": "👶 Nombre d'enfants à charge. Impact sur les dépenses du ménage",
+    "CODE_GENDER_M": "👤 Genre (1=Homme, 0=Femme). Variable démographique",
+    "FLAG_OWN_CAR": "🚗 Possède une voiture (1=Oui, 0=Non). Indicateur de patrimoine",
+    "FLAG_OWN_REALTY": "🏠 Propriétaire immobilier (1=Oui, 0=Non). Actif important en garantie",
+    
+    # Région et notation
+    "REGION_RATING_CLIENT": "🗺️ Notation de la région (1-3). 1=Meilleure, 3=Moins favorable",
+    "REGION_POPULATION_RELATIVE": "👥 Population relative de la région. Zone urbaine vs rurale",
+    
+    # Indicateurs de contact
+    "FLAG_MOBIL": "📱 Possède téléphone mobile",
+    "FLAG_EMP_PHONE": "☎️ Téléphone professionnel renseigné",
+    "FLAG_WORK_PHONE": "📞 Téléphone travail disponible",
+    "FLAG_PHONE": "🏠 Téléphone fixe domicile",
+    "FLAG_EMAIL": "📧 Email renseigné",
+    
+    # Documents
+    "FLAG_DOCUMENT_3": "📄 Document 3 fourni (le plus courant)",
+    
+    # Bureau de crédit - Agrégats
+    "BURO_DAYS_CREDIT_MEAN": "📋 Moyenne ancienneté des crédits au bureau",
+    "BURO_DAYS_CREDIT_ENDDATE_MEAN": "📋 Moyenne jours restants sur crédits existants",
+    "BURO_AMT_CREDIT_SUM_MEAN": "📋 Montant moyen des crédits au bureau",
+    "BURO_AMT_CREDIT_SUM_DEBT_MEAN": "📋 Dette moyenne au bureau de crédit",
+    
+    # Applications précédentes
+    "PREV_APP_CREDIT_PERC_MEAN": "📝 % crédit accordé vs demandé (historique)",
+    "PREV_CNT_PAYMENT_MEAN": "📝 Nombre moyen de paiements (anciens crédits)",
+}
+
+
 def get_feature_explanation(feature_name: str) -> str:
     """Retourne une explication en langage naturel d'une feature."""
-    explanations = {
-        "AMT_INCOME_TOTAL": "Revenu annuel total du client en euros",
-        "AMT_CREDIT": "Montant total du crédit demandé",
-        "AMT_ANNUITY": "Montant de l'annuité (paiement périodique)",
-        "EXT_SOURCE_1": "Score de crédit externe (source 1) - Plus élevé = meilleur profil",
-        "EXT_SOURCE_2": "Score de crédit externe (source 2) - Plus élevé = meilleur profil",
-        "EXT_SOURCE_3": "Score de crédit externe (source 3) - Plus élevé = meilleur profil",
-        "CREDIT_INCOME_RATIO": "Ratio crédit/revenu - Plus bas = meilleure capacité",
-        "DAYS_BIRTH": "Âge du client (en jours depuis la naissance)",
-        "DAYS_EMPLOYED": "Ancienneté dans l'emploi actuel",
-    }
-    return explanations.get(feature_name, f"Caractéristique: {feature_name}")
+    return FEATURE_EXPLANATIONS.get(feature_name, f"📌 {feature_name}: Caractéristique du modèle")
+
+
+def get_all_explainable_features() -> List[str]:
+    """Retourne la liste de toutes les features avec explications disponibles."""
+    return list(FEATURE_EXPLANATIONS.keys())
 
 
 def create_comparison_chart(
@@ -843,73 +893,150 @@ def main():
             st.warning("⚠️ Données de référence non disponibles pour la comparaison.")
             st.info("Placez le fichier `application_train.csv` dans le dossier `data/`")
         else:
-            st.markdown("Comparez les caractéristiques du client avec l'ensemble de la population ou un groupe de clients similaires.")
+            st.markdown("""
+            **Comparez les caractéristiques du client avec l'ensemble de la population ou un groupe de clients similaires.**
+            
+            ℹ️ Les graphiques se mettent à jour automatiquement lorsque vous modifiez les valeurs dans la section Scoring.
+            """)
             
             # Sélection du groupe de comparaison
             group_filter = st.selectbox(
-                "Groupe de comparaison",
+                "🎯 Groupe de comparaison",
                 ["Tous les clients", "Clients sans défaut (TARGET=0)", "Clients en défaut (TARGET=1)"],
                 help="Sélectionnez le groupe avec lequel comparer le client"
             )
             
-            # Features disponibles pour comparaison
-            numeric_features = ["AMT_INCOME_TOTAL", "AMT_CREDIT", "AMT_ANNUITY", "AMT_GOODS_PRICE",
-                               "EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3"]
-            available_features = [f for f in numeric_features if f in reference_data.columns]
+            # TOUTES les features numériques disponibles pour comparaison
+            all_numeric_cols = reference_data.select_dtypes(include=['float64', 'int64']).columns.tolist()
+            # Filtrer les colonnes qui ne sont pas des features (ex: SK_ID_CURR, TARGET)
+            exclude_cols = ['SK_ID_CURR', 'TARGET', 'index']
+            available_features = [f for f in all_numeric_cols if f not in exclude_cols and f in reference_data.columns]
+            
+            # Trier par importance (features expliquées en premier)
+            explained_features = list(FEATURE_EXPLANATIONS.keys())
+            priority_features = [f for f in explained_features if f in available_features]
+            other_features = [f for f in available_features if f not in priority_features]
+            available_features = priority_features + sorted(other_features)
             
             if st.session_state.features:
                 features = st.session_state.features
                 
-                # Graphique radar multi-critères
-                st.subheader("🎯 Vue d'ensemble - Comparaison multi-critères")
+                # Onglets pour différentes vues de comparaison
+                comp_tab1, comp_tab2, comp_tab3 = st.tabs([
+                    "🎯 Vue Radar Multi-Critères", 
+                    "📈 Comparaison Détaillée", 
+                    "📋 Statistiques Complètes"
+                ])
                 
-                radar_features = st.multiselect(
-                    "Caractéristiques à comparer",
-                    available_features,
-                    default=available_features[:5] if len(available_features) >= 5 else available_features,
-                    help="Choisissez jusqu'à 8 caractéristiques"
-                )
-                
-                if radar_features and len(radar_features) >= 3:
-                    fig_radar = create_radar_comparison(features, reference_data, radar_features)
-                    if fig_radar:
-                        st.plotly_chart(fig_radar, use_container_width=True)
-                else:
-                    st.info("Sélectionnez au moins 3 caractéristiques pour le graphique radar")
-                
-                st.divider()
-                
-                # Comparaison individuelle par feature
-                st.subheader("📈 Comparaison détaillée par caractéristique")
-                
-                selected_feature = st.selectbox(
-                    "Sélectionnez une caractéristique",
-                    available_features,
-                    help="Voir la distribution et la position du client"
-                )
-                
-                if selected_feature and selected_feature in features:
-                    client_value = features[selected_feature]
+                with comp_tab1:
+                    st.subheader("🎯 Vue d'ensemble - Comparaison multi-critères")
                     
-                    fig_comparison = create_comparison_chart(
-                        client_value, selected_feature, reference_data, group_filter
+                    # Features par défaut pour le radar (les plus importantes)
+                    default_radar = [f for f in ["AMT_INCOME_TOTAL", "AMT_CREDIT", "AMT_ANNUITY", 
+                                                  "EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3",
+                                                  "CREDIT_INCOME_RATIO"] if f in available_features][:6]
+                    
+                    radar_features = st.multiselect(
+                        "Caractéristiques à comparer (3-8 recommandé)",
+                        available_features,
+                        default=default_radar,
+                        help="Choisissez jusqu'à 8 caractéristiques pour le graphique radar",
+                        format_func=lambda x: f"{x} - {get_feature_explanation(x)[:40]}..."
+                    )
+                )
+                    
+                    if radar_features and len(radar_features) >= 3:
+                        fig_radar = create_radar_comparison(features, reference_data, radar_features)
+                        if fig_radar:
+                            st.plotly_chart(fig_radar, use_container_width=True)
+                            
+                            # Légende des features sélectionnées
+                            with st.expander("ℹ️ Signification des caractéristiques sélectionnées"):
+                                for feat in radar_features:
+                                    st.markdown(f"- **{feat}**: {get_feature_explanation(feat)}")
+                    else:
+                        st.info("Sélectionnez au moins 3 caractéristiques pour le graphique radar")
+                
+                with comp_tab2:
+                    st.subheader("📈 Comparaison détaillée par caractéristique")
+                    
+                    # Liste déroulante avec toutes les features et leurs explications
+                    selected_feature = st.selectbox(
+                        "Sélectionnez une caractéristique à analyser",
+                        available_features,
+                        help="Voir la distribution et la position du client",
+                        format_func=lambda x: f"{x}"
                     )
                     
-                    if fig_comparison:
-                        st.plotly_chart(fig_comparison, use_container_width=True)
+                    # Afficher l'explication de la feature sélectionnée
+                    st.info(f"**{selected_feature}**: {get_feature_explanation(selected_feature)}")
+                    
+                    if selected_feature and selected_feature in features:
+                        client_value = features[selected_feature]
                         
-                        # Statistiques textuelles
-                        ref_data = reference_data[selected_feature].dropna()
-                        percentile = (ref_data < client_value).mean() * 100
+                        fig_comparison = create_comparison_chart(
+                            client_value, selected_feature, reference_data, group_filter
+                        )
                         
-                        st.markdown(f"""
-                        **Statistiques pour {selected_feature}:**
-                        - Valeur du client: **{client_value:,.2f}**
-                        - Moyenne population: {ref_data.mean():,.2f}
-                        - Médiane population: {ref_data.median():,.2f}
-                        - Position du client: **{percentile:.0f}e percentile**
-                        """)
-            else:
+                        if fig_comparison:
+                            st.plotly_chart(fig_comparison, use_container_width=True)
+                            
+                            # Statistiques textuelles enrichies
+                            ref_data = reference_data[selected_feature].dropna()
+                            percentile = (ref_data < client_value).mean() * 100
+                            
+                            stat_col1, stat_col2, stat_col3 = st.columns(3)
+                            with stat_col1:
+                                st.metric("Valeur du client", f"{client_value:,.2f}")
+                            with stat_col2:
+                                st.metric("Moyenne population", f"{ref_data.mean():,.2f}")
+                            with stat_col3:
+                                st.metric("Position (percentile)", f"{percentile:.0f}%")
+                            
+                            # Interprétation automatique
+                            if percentile < 25:
+                                st.warning(f"⚠️ Le client est dans les 25% les plus bas pour cette caractéristique")
+                            elif percentile > 75:
+                                st.success(f"✅ Le client est dans les 25% les plus hauts pour cette caractéristique")
+                            else:
+                                st.info(f"ℹ️ Le client est dans la moyenne pour cette caractéristique")
+                    else:
+                        st.warning(f"La caractéristique {selected_feature} n'est pas disponible pour ce client")
+                
+                with comp_tab3:
+                    st.subheader("📋 Statistiques complètes du client")
+                    
+                    # Tableau comparatif de toutes les features du client vs population
+                    st.markdown("Comparaison de toutes les caractéristiques du client avec la population de référence.")
+                    
+                    comparison_data = []
+                    for feat in features.keys():
+                        if feat in reference_data.columns:
+                            client_val = features[feat]
+                            ref_col = reference_data[feat].dropna()
+                            if len(ref_col) > 0:
+                                percentile = (ref_col < client_val).mean() * 100
+                                comparison_data.append({
+                                    "Caractéristique": feat,
+                                    "Valeur Client": f"{client_val:,.2f}" if isinstance(client_val, float) else client_val,
+                                    "Moyenne Pop.": f"{ref_col.mean():,.2f}",
+                                    "Médiane Pop.": f"{ref_col.median():,.2f}",
+                                    "Percentile": f"{percentile:.0f}%",
+                                    "Interprétation": "🟢 Bon" if (percentile > 50 and "SOURCE" in feat) or (percentile < 50 and "RATIO" in feat) else "🟡 Moyen" if 25 < percentile < 75 else "🔴 Attention"
+                                })
+                    
+                    if comparison_data:
+                        df_comparison = pd.DataFrame(comparison_data)
+                        st.dataframe(df_comparison, use_container_width=True, hide_index=True)
+                        
+                        # Téléchargement du tableau
+                        csv = df_comparison.to_csv(index=False)
+                        st.download_button(
+                            "📥 Télécharger le tableau comparatif",
+                            csv,
+                            "comparaison_client.csv",
+                            "text/csv"
+                        )
                 st.info("👆 Veuillez d'abord saisir les caractéristiques d'un client dans 'Scoring Client'")
     
     # ============================================

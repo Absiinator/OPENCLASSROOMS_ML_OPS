@@ -43,16 +43,10 @@ class PredictionRequest(BaseModel):
          -d '{"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, "EXT_SOURCE_1": 0.5}}'
     ```
     """
-    # IMPORTANT: Pydantic v2 avec Optional et default=None
-    # Les deux champs sont optionnels pour supporter plusieurs formats
-    features: Optional[Dict[str, Any]] = Field(
-        default=None, 
-        description="Features du client (format recommandé)"
-    )
-    data: Optional[Dict[str, Any]] = Field(
-        default=None, 
-        description="Alias pour features (compatibilité)"
-    )
+    # IMPORTANT: Pydantic v2 - déclarer simplement comme Optional sans Field
+    # pour éviter l'erreur 422 "Field required"
+    features: Optional[Dict[str, Any]] = None
+    data: Optional[Dict[str, Any]] = None
     
     # Configuration Pydantic v2
     model_config = ConfigDict(
