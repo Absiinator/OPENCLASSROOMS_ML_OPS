@@ -19,16 +19,25 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import sys
+import urllib.request
+import urllib.error
+from pathlib import Path
+
+# Ajouter le répertoire courant au path Python
+sys.path.insert(0, str(Path(__file__).parent))
 
 # Import des modules locaux
-from api_client import (
-    check_api_health,
-    get_model_info,
-    predict_client,
-    explain_prediction,
-    get_feature_importance,
-    API_URL
-)
+import api_client
+import constants
+
+check_api_health = api_client.check_api_health
+get_model_info = api_client.get_model_info
+predict_client = api_client.predict_client
+explain_prediction = api_client.explain_prediction
+get_feature_importance = api_client.get_feature_importance
+API_URL = api_client.API_URL
+
 from constants import (
     REQUIRED_FEATURES,
     FEATURE_EXPLANATIONS,
@@ -129,6 +138,17 @@ def interpret_score(probability: float, threshold: float) -> dict:
     }
 
 
+def check_mlflow_health(url: str) -> bool:
+    """Vérifie si l'UI MLflow est accessible."""
+    if not url:
+        return False
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            return 200 <= resp.status < 400
+    except Exception:
+        return False
+
+
 def create_gauge_chart(probability: float, threshold: float) -> go.Figure:
     """Crée une jauge visuelle du score de risque."""
     color = get_risk_color(probability)
@@ -227,6 +247,15 @@ def render_sidebar():
         else:
             st.error("❌ API non disponible")
             st.info(f"URL: {API_URL}")
+
+        # Statut MLflow
+        mlflow_ok = check_mlflow_health(MLFLOW_URL)
+        if mlflow_ok:
+            st.success("✅ MLflow accessible")
+        else:
+            st.warning("⚠️ MLflow indisponible")
+        if MLFLOW_URL:
+            st.markdown(f"[Ouvrir MLflow UI]({MLFLOW_URL})")
         
         st.markdown("---")
         st.markdown("### ℹ️ À propos")

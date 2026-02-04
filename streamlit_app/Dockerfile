@@ -45,8 +45,10 @@ COPY streamlit_app/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-# Copier l'application
+# Copier l'application et les modules locaux
 COPY streamlit_app/app.py ./app.py
+COPY streamlit_app/api_client.py ./api_client.py
+COPY streamlit_app/constants.py ./constants.py
 
 # Note: Pas de fallback local - toutes les prédictions passent par l'API
 # On copie src/ uniquement pour d'éventuels utilitaires
@@ -59,8 +61,10 @@ COPY src/ ./src/
 RUN mkdir -p /app/data \
     && curl -L -o /tmp/data.zip \
     "https://s3-eu-west-1.amazonaws.com/static.oc-static.com/prod/courses/files/Parcours_data_scientist/Projet+-+Impl%C3%A9menter+un+mod%C3%A8le+de+scoring/Projet+Mise+en+prod+-+home-credit-default-risk.zip" \
-    && unzip -o /tmp/data.zip -d /app/data/ \
-    && rm /tmp/data.zip \
+    && mkdir -p /tmp/data_extract \
+    && unzip -o /tmp/data.zip -d /tmp/data_extract \
+    && find /tmp/data_extract -type f -name "*.csv" -exec mv {} /app/data/ \; \
+    && rm -rf /tmp/data.zip /tmp/data_extract \
     && echo "✅ Données téléchargées et décompressées dans /app/data/"
 
 # Copier les rapports Evidently pour l'onglet Data Drift

@@ -47,16 +47,20 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY src/ ./src/
 COPY api/ ./api/
 COPY models/ ./models/
+COPY reports/ ./reports/
 
 # Créer les répertoires nécessaires
 RUN mkdir -p /app/data /app/reports
 
 # Télécharger et décompresser les données Home Credit
 # URL: OpenClassrooms S3 bucket
+# Extraction robuste: replace les CSV à la racine de /app/data
 RUN curl -L -o /tmp/data.zip \
     "https://s3-eu-west-1.amazonaws.com/static.oc-static.com/prod/courses/files/Parcours_data_scientist/Projet+-+Impl%C3%A9menter+un+mod%C3%A8le+de+scoring/Projet+Mise+en+prod+-+home-credit-default-risk.zip" \
-    && unzip -o /tmp/data.zip -d /app/data/ \
-    && rm /tmp/data.zip \
+    && mkdir -p /tmp/data_extract \
+    && unzip -o /tmp/data.zip -d /tmp/data_extract \
+    && find /tmp/data_extract -type f -name "*.csv" -exec mv {} /app/data/ \; \
+    && rm -rf /tmp/data.zip /tmp/data_extract \
     && echo "✅ Données téléchargées et décompressées dans /app/data/"
 
 # Changer la propriété des fichiers

@@ -18,32 +18,8 @@ tests/
 
 ## Exécution des tests
 
-### Tous les tests
-```bash
-pytest tests/ -v
-```
-
-### Tests spécifiques
-```bash
-# Tests de coût métier
-pytest tests/test_cost.py -v
-
-# Tests de prétraitement
-pytest tests/test_preprocessing.py -v
-
-# Tests API
-pytest tests/test_api.py -v
-```
-
-### Avec couverture de code
-```bash
-pytest tests/ -v --cov=src --cov=api --cov-report=html
-```
-
-### Tests rapides uniquement
-```bash
-pytest tests/ -v -m "not slow"
-```
+Les tests sont exécutables via `pytest` (intégrés au workflow CI/CD).
+Les fichiers couvrent le coût métier, le prétraitement et l’API.
 
 ## Conventions
 

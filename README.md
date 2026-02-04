@@ -1,7 +1,6 @@
 # 🏦 Home Credit Scoring - Projet MLOps Complet
 
-[![CI - Tests & Linting](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/actions/workflows/ci.yml/badge.svg)](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/actions/workflows/ci.yml)
-[![CD - Deploy](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/actions/workflows/deploy.yml/badge.svg)](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/actions/workflows/deploy.yml)
+[![CI/CD - Tests & Build](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/actions/workflows/ci-cd.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -27,46 +26,18 @@ Prédire la **probabilité de défaut de paiement** d'un client demandant un cr�
 
 ```
 home-credit-scoring/
-├── 📁 api/                     # API FastAPI de scoring
-│   ├── main.py                 # Endpoints REST
-│   ├── models.py               # Schémas Pydantic
-│   ├── requirements.txt        # Dépendances API
-│   └── Dockerfile              # Containerisation
-├── 📁 data/                    # Données (non versionnées)
-│   ├── raw/                    # Données brutes
-│   └── processed/              # Données prétraitées
-├── 📁 models/                  # Modèles entraînés
-├── 📁 notebooks/               # Analyses et expérimentations
-│   ├── 01_EDA.ipynb           # Analyse exploratoire
-│   ├── 02_Preprocessing_Features.ipynb
-│   ├── 03_Model_Training_MLflow.ipynb
-│   └── 04_Drift_Evidently.ipynb
-├── 📁 reports/                 # Rapports générés
-│   ├── figures/                # Visualisations
-│   └── drift/                  # Rapports Evidently
-├── 📁 scripts/                 # Scripts utilitaires
-│   └── download_data.py        # Téléchargement Kaggle
-├── 📁 src/                     # Code source principal
-│   ├── __init__.py
-│   ├── preprocessing.py        # Pipeline de prétraitement
-│   ├── train.py               # Entraînement avec MLflow
-│   ├── inference.py           # Prédictions
-│   ├── metrics.py             # Métriques et coût métier
-│   └── feature_importance.py   # Explications SHAP
-├── 📁 streamlit_app/          # Interface utilisateur
-│   ├── app.py                 # Application Streamlit
-│   └── requirements.txt
+├── 📁 api/                     # API FastAPI de scoring (Dockerfile inclus)
+├── 📁 mlflow/                  # Service MLflow UI (Dockerfile + README)
+├── 📁 streamlit_app/           # Dashboard Streamlit (Dockerfile inclus)
+├── 📁 models/                  # Modèles entraînés (trackés, sans Git LFS)
+├── 📁 data/                    # Fichiers CSV locaux (optionnels en déploiement)
+├── 📁 notebooks/               # Notebooks + tracking MLflow (notebooks/mlruns)
+├── 📁 reports/                 # Rapports Evidently + figures
+├── 📁 src/                     # Code source (prétraitement, entraînement, metrics)
 ├── 📁 tests/                   # Tests unitaires
-│   ├── test_cost.py
-│   ├── test_preprocessing.py
-│   └── test_api.py
-├── 📁 .github/workflows/       # CI/CD
-│   ├── ci.yml                 # Intégration continue
-│   └── deploy.yml             # Déploiement continu
-├── environment.yml             # Environnement Conda
-├── pyproject.toml             # Configuration projet
-├── setup.py                   # Installation
-└── README.md                  # Ce fichier
+├── render.yaml                 # Blueprint Render (3 services)
+├── run.py                      # Lancement local (API/Dashboard/MLflow)
+└── README.md                   # Ce fichier
 ```
 
 ## 🚀 Démarrage rapide
@@ -78,53 +49,25 @@ home-credit-scoring/
 - Docker (optionnel, pour le déploiement)
 - Compte Kaggle (pour les données)
 
-### Installation
+### Installation locale
 
-```bash
-# Cloner le repository
-git clone https://github.com/username/home-credit-scoring.git
-cd home-credit-scoring
+- Python 3.10+ requis
+- Dépendances décrites dans `environment.yml`, `pyproject.toml` et `api/requirements.txt`
+- Le script `run.py` orchestre les services en local (API, Dashboard, MLflow)
 
-# Créer l'environnement conda
-conda env create -f environment.yml
-conda activate home-credit
+### Données (local vs déploiement)
 
-# Ou avec pip
-pip install -e .
-```
+- En local, les CSV sont attendus dans `data/`
+- En déploiement (Docker/Render), les images téléchargent et extraient automatiquement le dataset dans `/app/data`, sans Git LFS
 
-### Télécharger les données
+### Entraînement et tracking
 
-```bash
-# Configurer les credentials Kaggle
-# Créer ~/.kaggle/kaggle.json avec votre API key
+- Le notebook `03_Model_Training_MLflow.ipynb` logge les runs MLflow dans `notebooks/mlruns/`
+- Les modèles exportés sont versionnés dans `models/` et utilisés par l’API pour l’inférence
 
-# Télécharger les données
-python scripts/download_data.py
-```
+### Lancement local
 
-### Entraîner le modèle
-
-```bash
-# Avec MLflow tracking
-python -c "from src.train import train_with_mlflow; train_with_mlflow()"
-
-# Voir les expériences MLflow (port 5002 car 5000/5001 utilisés par AirPlay sur macOS)
-python run.py mlflow
-# Ouvre http://localhost:5002
-```
-
-### Lancer la stack complète (recommandé)
-
-```bash
-# Méthode 1: Script unifié (API + Dashboard)
-python run.py all
-
-# Méthode 2: Services séparés
-python run.py api        # API sur http://localhost:8000
-python run.py dashboard  # Dashboard sur http://localhost:8501
-python run.py mlflow     # MLflow UI sur http://localhost:5002
-```
+`run.py` expose les commandes `train`, `api`, `dashboard`, `mlflow`, `all` (ports par défaut ci‑dessous).
 
 ### Ports par défaut
 
@@ -134,54 +77,37 @@ python run.py mlflow     # MLflow UI sur http://localhost:5002
 | Dashboard Streamlit | 8501 | http://localhost:8501 |
 | MLflow UI | 5002 | http://localhost:5002 |
 
+*En déploiement Docker/Render, MLflow écoute sur le port 5000 (voir `render.yaml`).*
+
 ### Lancer avec Docker
 
-Le projet utilise **3 Dockerfiles distincts** pour chaque service :
+Le projet fournit **3 Dockerfiles** (API, Dashboard, MLflow). Chaque image est prête pour le déploiement sur Render (plan gratuit).
 
 #### 1. API (api/Dockerfile)
-```bash
-docker build -t home-credit-api -f api/Dockerfile .
-docker run -p 8000:8000 home-credit-api
-```
 - **Port** : 8000
-- **Base** : python:3.10-slim
-- **Contient** : 
-  - ✅ Modèle LightGBM (`models/lgbm_model.joblib`) - **inclus dans l'image**
-  - ✅ Preprocessor (`models/preprocessor.joblib`) - **inclus dans l'image**
-  - ✅ Configuration du modèle (`models/model_config.json`)
-  - ✅ **Données téléchargées automatiquement** depuis S3 OpenClassrooms lors du build
-  - Code API FastAPI
-  - Code source (`src/`, `api/`)
+- **Contenu** :
+  - Modèle LightGBM, préprocesseur et configuration **trackés dans `models/`**
+  - Code API FastAPI + modules `src/`
+  - Rapports Evidently (`reports/`) pour l’endpoint `/data/drift`
+  - **Données téléchargées automatiquement** pendant le build (extraction vers `/app/data`)
 
 #### 2. Dashboard (streamlit_app/Dockerfile)
-```bash
-docker build -t home-credit-dashboard -f streamlit_app/Dockerfile .
-docker run -p 8501:8501 \
-  -e API_URL=https://votre-api.onrender.com \
-  -e MLFLOW_URL=https://votre-mlflow.onrender.com \
-  home-credit-dashboard
-```
 - **Port** : 8501
-- **Base** : python:3.10-slim
-- **Variables obligatoires** : `API_URL` (API FastAPI), `MLFLOW_URL` (Interface MLflow)
-- **Contient** : 
-  - Application Streamlit avec 5 onglets (Scoring, Comparaison, Import/Simulation, Drift, Documentation)
-  - Modèles pour fallback local si l'API est indisponible
-  - ✅ **Données téléchargées automatiquement** depuis S3 OpenClassrooms lors du build
-  - **Barre latérale enrichie** : Navigation, État des services, Infos modèle, **Statistiques descriptives du dataset**
+- **Variables obligatoires** : `API_URL`, `MLFLOW_URL`
+- **Contenu** :
+  - Application Streamlit (4 onglets: Scoring, Comparaison, Data Drift, Documentation)
+  - Rapports Evidently dans `reports/`
+  - **Données téléchargées automatiquement** pendant le build (extraction vers `/app/data`)
 
 #### 3. MLflow (mlflow/Dockerfile)
-```bash
-docker build -t home-credit-mlflow -f mlflow/Dockerfile .
-docker run -p 5000:5000 home-credit-mlflow
-```
 - **Port** : 5000
-- **Base** : python:3.10-slim
-- **Contient** : MLflow UI avec les runs d'expérimentation (mlruns/ copié lors du build)
+- **Contenu** :
+  - MLflow UI avec runs copiés depuis `notebooks/mlruns/`
+  - Registry MLflow disponible (lecture seule en production)
 
-> 📝 **Notes** : 
-> - Les **données sont téléchargées automatiquement** depuis le bucket S3 OpenClassrooms lors du build Docker (pas de COPY local).
-> - **MLflow** : Les runs existants dans `mlruns/` sont copiés dans l'image Docker et accessibles en lecture seule sur Render. Nouvelles expériences non persistantes (tier gratuit).
+> 📝 **Notes** :
+> - Les **données sont téléchargées au build** des images API et Dashboard (pas de Git LFS).
+> - **MLflow** est configuré pour le plan gratuit (1 worker Gunicorn, mémoire limitée).
 
 ## 📊 Résultats du modèle
 
@@ -257,23 +183,23 @@ Les 2 formats alternatifs sont aussi acceptés (grâce à `extra="allow"`) :
 - Format JSON flexible : `features`, `data`, ou format plat acceptés.
 - Toutes les colonnes supplémentaires ignorées (mode `extra="allow"`).
 
-### 6. 🔄 CI/CD
+### 6. 🔄 CI/CD & Déploiement Render (plan gratuit)
 
-- Tests automatisés sur chaque PR (**les tests doivent passer avant le déploiement**)
-- Linting et formatage du code
-- **Build Docker automatique** des 3 services (API, Dashboard, MLflow)
-- **Push des images vers GitHub Container Registry (GHCR)**
-- **Déploiement MANUEL sur Render** (tier gratuit - Manual Deploy)
-
-> ⚠️ **Important** : 
-> - Le workflow CI/CD **build automatiquement** les images Docker après chaque push sur `main`
-> - Les images sont poussées vers GHCR et sont prêtes à être déployées
-> - Le **déploiement sur Render est MANUEL** via le bouton "Manual Deploy" (tier gratuit)
-> - Le workflow ne s'exécute que si tous les tests CI réussissent
+- `render.yaml` décrit les 3 services (API, Dashboard, MLflow)
+- Render **construit les images depuis les Dockerfiles** du repo
+- `autoDeploy: true` active le déploiement automatique à chaque push
+- Le workflow GitHub Actions (présent dans `.github/workflows/ci-cd.yml`) reste **optionnel** : il build/push des images GHCR, mais Render n’en dépend pas
 
 Pour le guide complet de déploiement, consultez [RENDER_SETUP.md](RENDER_SETUP.md).
 
 ## 📁 Données
+
+### 📦 Fichiers suivis dans le repo (sans Git LFS)
+
+- `models/` : artefacts nécessaires à l’inférence (API)
+- `notebooks/mlruns/` : runs MLflow + registry (lecture seule en prod)
+- `reports/` : rapports Evidently utilisés par le dashboard
+- `data/` : utile en local, **non requis** en déploiement (download au build)
 
 Le projet utilise les données du challenge Kaggle [Home Credit Default Risk](https://www.kaggle.com/c/home-credit-default-risk) :
 
@@ -317,20 +243,9 @@ LightGBM Model (245 features)
 
 ## 🧪 Tests
 
-```bash
-# Tous les tests
-pytest tests/ -v
-
-# Avec couverture
-pytest tests/ -v --cov=src --cov=api --cov-report=html
-
-# Tests spécifiques
-pytest tests/test_cost.py -v        # Tests coût métier
-pytest tests/test_preprocessing.py -v  # Tests prétraitement
-pytest tests/test_api.py -v         # Tests API
-```
-
-**Note** : Tests simples et rapides en CI/CD - Aucun test de déploiement (Render testé manuellement).
+La structure et les conventions de tests sont décrites dans `tests/README.md`.
+Les tests sont conçus pour être rapides en CI/CD et couvrent le coût métier,
+le prétraitement et l’API (pas de tests de déploiement Render).
 
 ## � Versions Critiques - Pydantic v2
 
@@ -370,73 +285,42 @@ class PredictionRequest(BaseModel):
 
 ⚠️ **Si vous updatez ces versions, testez localement d'abord !** Les changements Pydantic v3 pourraient casser la validation.
 
-## �🔁 CI/CD et Déploiement
+## 🔁 CI/CD et Déploiement
 
-### Architecture CI/CD
+### CI/CD (optionnel)
 
-Le projet utilise un **workflow GitHub Actions unifié** ([ci-cd.yml](.github/workflows/ci-cd.yml)) :
+Le workflow GitHub Actions (`.github/workflows/ci-cd.yml`) exécute :
+- **Lint** (black, isort, flake8)
+- **Tests unitaires** (pytest)
+- **Build d’images Docker** (API, Dashboard, MLflow) et push vers GHCR
 
-1. **Lint** - Vérification du code (non bloquant)
-   - black, isort, flake8
-
-2. **Test** - Tests unitaires (BLOQUANT)
-   - pytest avec couverture
-   - Tests API
-
-3. **Build & Push** - Publication des images Docker
-   - **S'exécute uniquement si les tests passent**
-   - Build des 3 images Docker (API, Dashboard, MLflow)
-   - Push vers GitHub Container Registry (GHCR)
-
-4. **Summary** - Résumé du déploiement
-   - Instructions pour le déploiement manuel sur Render
-
-### Flux de déploiement
-
-```
-Push sur main → Tests → ✅ Succès → Build Docker → Push GHCR → Manual Deploy Render
-                      → ❌ Échec → Arrêt (pas de build)
-```
+⚠️ Render n’a pas besoin de GHCR si vous utilisez `render.yaml` : il build directement depuis le repo.
 
 ### Configuration Render (render.yaml)
 
-Le fichier `render.yaml` définit les 3 services avec Blueprint :
+Le fichier `render.yaml` décrit **3 services Docker** en plan gratuit :
 
-| Service | Port | Health Check | Variables |
-|---------|------|--------------|-----------|
-| **API** | 8000 | `/health` | `PORT=8000` |
-| **Dashboard** | 8501 | `/_stcore/health` | `API_URL`, `MLFLOW_URL` |
-| **MLflow** | 5000 | `/` | `PORT=5000` |
+| Service | Nom par défaut | Port | Health Check | Variables clés |
+|---------|----------------|------|--------------|----------------|
+| **API** | `home-scoring-api` | 8000 | `/health` | `PORT`, `PYTHONPATH`, `HOST` |
+| **Dashboard** | `home-scoring-dashboard` | 8501 | `/_stcore/health` | `PORT`, `API_URL`, `MLFLOW_URL` |
+| **MLflow** | `home-scoring-mlflow` | 5000 | `/` | `PORT` |
 
-#### Déploiement avec Blueprint
+**Point clé** : `API_URL` et `MLFLOW_URL` doivent correspondre aux URLs réelles des services Render.  
+Si vous renommez les services, adaptez ces variables dans `render.yaml`.
 
-1. Allez sur [dashboard.render.com](https://dashboard.render.com)
-2. Cliquez **New** → **Blueprint**
-3. Connectez votre repo GitHub
-4. Render détecte automatiquement `render.yaml`
-5. Les 3 services sont créés automatiquement
+### Variables d'environnement (référence)
 
-#### Variables d'environnement Dashboard (à configurer après déploiement)
-
-```bash
-API_URL=https://home-credit-scoring-api.onrender.com
-MLFLOW_URL=https://home-credit-scoring-mlflow.onrender.com
-```
-
-> ⚠️ **Important** : Après le premier déploiement, mettez à jour `API_URL` et `MLFLOW_URL` avec les vraies URLs de vos services Render.
-
-### Secrets GitHub requis
-
-Aucun secret supplémentaire n'est nécessaire. Le workflow utilise `GITHUB_TOKEN` automatique pour publier sur GHCR.
-
-### Variables d'environnement
-
-| Variable | Service | Description | Défaut |
-|----------|---------|-------------|--------|
-| `PORT` | API/Dashboard | Port d'écoute | 8000 / 8501 |
-| `API_URL` | Dashboard | URL de l'API | `http://localhost:8000` |
-| `MODEL_PATH` | API | Chemin du modèle | `./models/lgbm_model.joblib` |
-| `THRESHOLD` | API | Seuil de décision | `0.44` |
+| Variable | Service | Description | Valeur par défaut |
+|----------|---------|-------------|-------------------|
+| `HOST` | API | Host d’écoute | `0.0.0.0` |
+| `PORT` | API/Dashboard/MLflow | Port d’écoute | 8000 / 8501 / 5000 |
+| `PYTHONPATH` | API | Chemin Python | `/app` |
+| `API_URL` | Dashboard | URL de l’API | URL Render de l’API |
+| `MLFLOW_URL` | Dashboard | URL MLflow UI | URL Render MLflow |
+| `STREAMLIT_SERVER_ADDRESS` | Dashboard | Adresse Streamlit | `0.0.0.0` |
+| `STREAMLIT_SERVER_PORT` | Dashboard | Port Streamlit | `8501` |
+| `MLFLOW_TRACKING_URI` | MLflow | Backend store | `/app/mlruns` |
 
 ## 📖 Documentation API
 
@@ -444,32 +328,30 @@ La documentation interactive est disponible via :
 - **Swagger UI** : `http://localhost:8000/docs` - Tests des endpoints directement
 - **ReDoc** : `http://localhost:8000/redoc` - Documentation complète
 
-### Exemple de requête (17 features minimal)
+### Exemple de payload (17 features minimal)
 
-```bash
-curl -X POST "http://localhost:8000/predict" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "features": {
-      "AMT_INCOME_TOTAL": 150000,
-      "AMT_CREDIT": 500000,
-      "AMT_ANNUITY": 25000,
-      "AMT_GOODS_PRICE": 500000,
-      "DAYS_BIRTH": -12000,
-      "DAYS_EMPLOYED": -5000,
-      "CNT_CHILDREN": 1,
-      "CODE_GENDER_M": 1,
-      "FLAG_OWN_CAR": 1,
-      "FLAG_OWN_REALTY": 1,
-      "EXT_SOURCE_1": 0.5,
-      "EXT_SOURCE_2": 0.6,
-      "EXT_SOURCE_3": 0.55,
-      "REGION_RATING_CLIENT": 2,
-      "CREDIT_INCOME_RATIO": 3.33,
-      "ANNUITY_INCOME_RATIO": 0.167,
-      "EXT_SOURCE_MEAN": 0.55
-    }
-  }'
+```json
+{
+  "features": {
+    "AMT_INCOME_TOTAL": 150000,
+    "AMT_CREDIT": 500000,
+    "AMT_ANNUITY": 25000,
+    "AMT_GOODS_PRICE": 500000,
+    "DAYS_BIRTH": -12000,
+    "DAYS_EMPLOYED": -5000,
+    "CNT_CHILDREN": 1,
+    "CODE_GENDER_M": 1,
+    "FLAG_OWN_CAR": 1,
+    "FLAG_OWN_REALTY": 1,
+    "EXT_SOURCE_1": 0.5,
+    "EXT_SOURCE_2": 0.6,
+    "EXT_SOURCE_3": 0.55,
+    "REGION_RATING_CLIENT": 2,
+    "CREDIT_INCOME_RATIO": 3.33,
+    "ANNUITY_INCOME_RATIO": 0.167,
+    "EXT_SOURCE_MEAN": 0.55
+  }
+}
 ```
 
 ### Exemple de réponse
@@ -509,17 +391,16 @@ Consulter [Versions Critiques - Pydantic v2](#-versions-critiques---pydantic-v2)
 
 ### MLflow crashing avec "Out of Memory" ou "SIGKILL" sur Render
 
-**Cause** : Utilisation de `mlflow server --workers N` qui consomme trop de RAM (512MB max sur tier gratuit)
+**Cause** : trop de workers Gunicorn ou dépendances lourdes sur un plan 512MB.
 
-**Solution** : Le Dockerfile utilise maintenant `mlflow ui` (~150MB) au lieu de `mlflow server` (~400MB)
+**Solution** : le Dockerfile utilise **`mlflow server` avec 1 worker** + dépendances minimales.
 
-**Vérification** : Consultez [mlflow/Dockerfile](mlflow/Dockerfile) et [mlflow/README.md](mlflow/README.md)
+**Vérification** : voir [mlflow/Dockerfile](mlflow/Dockerfile) et [mlflow/README.md](mlflow/README.md)
 
 | Configuration | RAM | Status |
 |---------------|-----|--------|
-| **mlflow ui** (actuel) | ~150-200 MB | ✅ Fonctionne |
-| mlflow server --workers 1 | ~250-300 MB | ⚠️ Instable |
-| mlflow server (défaut) | ~400-500 MB | ❌ CRASH |
+| **mlflow server --workers=1** (actuel) | ~200-250 MB | ✅ Fonctionne |
+| mlflow server (défaut 4 workers) | ~400-500 MB | ❌ CRASH |
 
 ### Dashboard ne peut pas se connecter à l'API
 
@@ -541,13 +422,11 @@ streamlit run streamlit_app/app.py
 
 ## 🤝 Contribution
 
-Les contributions sont les bienvenues ! Veuillez :
+Les contributions sont les bienvenues :
 
 1. Forker le repository
-2. Créer une branche (`git checkout -b feature/amazing-feature`)
-3. Commiter vos changements (`git commit -m 'Add amazing feature'`)
-4. Pusher la branche (`git push origin feature/amazing-feature`)
-5. Ouvrir une Pull Request
+2. Créer une branche dédiée
+3. Proposer les changements via Pull Request
 
 ## 📄 Licence
 

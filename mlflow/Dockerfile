@@ -1,11 +1,8 @@
 # =============================================================================
-# Dockerfile - MLflow UI (Ultra-Light pour Render Free Tier 512MB)
+# Dockerfile - MLflow UI (Render Free Tier 512MB)
 # =============================================================================
-# OPTIMISÉ pour le plan gratuit Render (512MB RAM max)
-# Force Flask développement (WERKZEUG) sans Gunicorn
-#
-# SOLUTION: Désactiver explicitement Gunicorn avec MLFLOW_DISABLE_GUNICORN=1
-# et utiliser --workers=1 pour limiter la RAM
+# Optimisé pour le plan gratuit Render (512MB RAM max)
+# Utilise mlflow server avec 1 worker Gunicorn pour limiter la RAM
 # =============================================================================
 
 FROM python:3.10-slim
@@ -13,7 +10,7 @@ FROM python:3.10-slim
 # Métadonnées
 LABEL maintainer="Home Credit Scoring Team"
 LABEL version="1.2.0"
-LABEL description="MLflow UI - Flask Simple (No Gunicorn)"
+LABEL description="MLflow UI - Gunicorn 1 worker (Render Free Tier)"
 
 # Variables d'environnement CRITIQUES
 ARG PORT=5000
@@ -21,7 +18,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=${PORT} \
     MLFLOW_TRACKING_URI=/app/mlruns \
-    # FORCE Flask dev server sans Gunicorn
+    # Limiter le nombre de workers Gunicorn
     GUNICORN_CMD_ARGS="--workers=1 --threads=1 --timeout=120" \
     # Limiter la mémoire
     MALLOC_ARENA_MAX=2
@@ -43,7 +40,15 @@ COPY notebooks/mlruns/. /app/mlruns/
 # Nettoyer et corriger les chemins pour Docker
 RUN echo "🔧 Correction des chemins MLflow..." && \
     rm -rf /app/mlruns/.trash 2>/dev/null || true && \
-    rm -rf /app/mlruns/models 2>/dev/null || true && \
+    # Assurer un meta.yaml dans les dossiers "models" d'expérience
+    # (évite l'erreur MissingConfig quand MLflow scanne les runs)
+    for d in /app/mlruns/*/models; do \
+        if [ -d "$d" ] && [ ! -f "$d/meta.yaml" ]; then \
+            exp_id=$(basename "$(dirname "$d")"); \
+            mkdir -p "${d}/artifacts" 2>/dev/null || true; \
+            printf "artifact_uri: file:///app/mlruns/${exp_id}/models/artifacts\nend_time: 0\nentry_point_name: ''\nexperiment_id: '${exp_id}'\nlifecycle_stage: deleted\nrun_id: models\nrun_uuid: models\nrun_name: models\nsource_name: ''\nsource_type: 4\nsource_version: ''\nstart_time: 0\nstatus: 4\ntags: []\nuser_id: mlflow\n" > "$d/meta.yaml"; \
+        fi; \
+    done && \
     # Corriger TOUS les meta.yaml d'experiments
     for f in /app/mlruns/*/meta.yaml; do \
         if [ -f "$f" ]; then \
@@ -62,6 +67,9 @@ RUN echo "🔧 Correction des chemins MLflow..." && \
             exp_id=$(basename "$exp_dir"); \
             sed -i "s|artifact_uri:.*|artifact_uri: file:///app/mlruns/${exp_id}/${run_id}/artifacts|g" "$f" 2>/dev/null || true; \
             mkdir -p "${run_dir}/artifacts" 2>/dev/null || true; \
+            if ! grep -q '^run_uuid:' "$f"; then \
+                echo "run_uuid: ${run_id}" >> "$f"; \
+            fi; \
             echo "✅ Fixed run: $f"; \
         fi; \
     done && \

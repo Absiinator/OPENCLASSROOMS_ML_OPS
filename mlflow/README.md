@@ -8,21 +8,8 @@ Ce conteneur Docker déploie une interface MLflow UI pour visualiser et comparer
 
 ## 🚀 Déploiement
 
-### Local
-
-```bash
-# Depuis la racine du projet
-docker build -f mlflow/Dockerfile -t home-credit-mlflow .
-docker run -p 5000:5000 home-credit-mlflow
-```
-
-Accéder à : http://localhost:5000
-
-### Production (Render)
-
-Le déploiement est automatique via GitHub Actions (`.github/workflows/deploy.yml`).
-
-L'image est construite et poussée vers GHCR, puis déployée sur Render.
+- **Local** : utiliser le Dockerfile `mlflow/Dockerfile`
+- **Render** : le service est créé via `render.yaml` (build direct depuis le repo)
 
 ## 📊 Contenu
 
@@ -63,35 +50,25 @@ Voir [requirements.txt](requirements.txt) :
 
 ### Stratégie d'optimisation
 
-Le Dockerfile utilise **`mlflow server --gunicorn-opts "--workers=1"`** pour forcer un seul worker :
+Le Dockerfile utilise **`mlflow server` avec 1 worker** pour limiter la RAM :
 
 | Configuration | Consommation RAM | Détail |
 |---------------|-----------------|--------|
 | **mlflow server --workers=1** (actuel) | ~200-250 MB | 1 seul worker Gunicorn |
 | mlflow server (défaut 4 workers) | ~400-500 MB | **CRASH - dépassement RAM** |
-| mlflow ui | Variable | Peut encore utiliser Gunicorn en interne |
 
 **Clé du succès** : `--gunicorn-opts "--workers=1 --threads=2 --timeout=120"`
 
 ### Configuration appliquée
 
-```dockerfile
-# Correction des chemins absolus
-RUN find /app/mlruns -maxdepth 2 -name "meta.yaml" -exec sed -i 's|artifact_location:.*|artifact_location: file:///app/mlruns|g' {} \;
-
-# Commande avec URI file://
-CMD mlflow server \
-    --host 0.0.0.0 \
-    --port ${PORT} \
-    --backend-store-uri file:///app/mlruns \
-    --serve-artifacts \
-    --gunicorn-opts "--workers=1 --threads=2 --timeout=120"
-```
+Le Dockerfile :
+- normalise les chemins dans les `meta.yaml`
+- ajoute un `meta.yaml` minimal aux dossiers `models` d’expérience
+- lance `mlflow server` avec 1 worker
 
 **Résolution des erreurs** :
-- ✅ `INTERNAL_ERROR: Yaml file does not exist` → Chemins absolus `file:///app/mlruns`
-- ✅ `500 Internal Server Error` → URI backend store correcte
-- ✅ Chemins relatifs corrigés vers absolus lors du build Docker
+- ✅ `INTERNAL_ERROR: Yaml file does not exist` → chemins normalisés
+- ✅ `Malformed run 'models'` → `meta.yaml` ajouté aux dossiers `models`
 
 ## 📝 Notes
 
