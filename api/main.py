@@ -374,13 +374,15 @@ async def predict(
         # Prédiction
         probability = float(used_model.predict_proba(X)[0, 1])
         
-        # Seuil
+        # Seuil optimal (0.44 depuis model_config.json, valeur fixe pour cohérence)
+        # Note: 0.44 est le seuil optimal calculé lors de l'entraînement pour minimiser le coût métier
+        OPTIMAL_THRESHOLD = 0.44
         if threshold is not None:
             used_threshold = threshold
         elif config is not None:
-            used_threshold = config.get("optimal_threshold", 0.5)
+            used_threshold = config.get("optimal_threshold", OPTIMAL_THRESHOLD)
         else:
-            used_threshold = 0.5
+            used_threshold = OPTIMAL_THRESHOLD
             
         prediction = 1 if probability >= used_threshold else 0
         
@@ -395,6 +397,88 @@ async def predict(
         
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erreur de prédiction: {str(e)}")
+
+
+@app.post("/predict/simple", tags=["Prediction"])
+async def predict_simple(
+    body: Dict[str, Any] = Body(...),
+    threshold: Optional[float] = Query(None, ge=0, le=1),
+    model_dep = Depends(get_model),
+    preprocessor_dep = Depends(get_preprocessor)
+):
+    """
+    Endpoint de prédiction simplifié (sans validation Pydantic stricte).
+    
+    Accepte n'importe quel JSON avec les features directement ou dans un champ "features".
+    
+    ## Format de requête
+    
+    ```json
+    {"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, ...}}
+    ```
+    
+    ou format plat:
+    
+    ```json
+    {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, ...}
+    ```
+    """
+    print(f"[API /predict/simple] Body reçu: {list(body.keys())}")
+    
+    used_model = model_dep or model
+    used_preprocessor = preprocessor_dep or preprocessor
+
+    if used_model is None:
+        raise HTTPException(status_code=503, detail="Modèle non chargé")
+    
+    try:
+        # Extraire les features du body
+        if "features" in body and isinstance(body["features"], dict):
+            client_dict = body["features"]
+        elif "data" in body and isinstance(body["data"], dict):
+            client_dict = body["data"]
+        else:
+            # Format plat: les features sont directement dans le body
+            client_dict = {k: v for k, v in body.items() if not k.startswith("_")}
+        
+        if not client_dict:
+            raise HTTPException(status_code=400, detail="Aucune feature fournie")
+        
+        print(f"[API /predict/simple] {len(client_dict)} features extraites")
+        
+        df = pd.DataFrame([client_dict])
+        
+        # Feature engineering
+        try:
+            df = create_application_features(df)
+        except Exception as e:
+            print(f"[API /predict/simple] Feature engineering warning: {e}")
+        
+        # Prétraitement
+        if used_preprocessor is not None:
+            X = used_preprocessor.transform(df)
+        else:
+            X = df.values
+        
+        # Prédiction
+        probability = float(used_model.predict_proba(X)[0, 1])
+        
+        # Seuil (0.44 = optimal)
+        OPTIMAL_THRESHOLD = 0.44
+        used_threshold = threshold if threshold is not None else (config.get("optimal_threshold", OPTIMAL_THRESHOLD) if config else OPTIMAL_THRESHOLD)
+        
+        prediction = 1 if probability >= used_threshold else 0
+        
+        return {
+            "probability": round(probability, 4),
+            "prediction": prediction,
+            "decision": "REFUSÉ" if prediction == 1 else "ACCEPTÉ",
+            "risk_category": get_risk_category(probability),
+            "threshold": used_threshold
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Erreur: {str(e)}")
 
 
 @app.post("/predict/batch", response_model=BatchPredictionResponse, tags=["Prediction"])
@@ -669,25 +753,6 @@ async def get_feature_names(model_dep = Depends(get_model), preprocessor_dep = D
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur: {str(e)}")
-
-
-@app.get("/client/{client_id}", response_model=PredictionResponse, tags=["Client"])
-async def get_client_prediction(
-    client_id: int,
-    threshold: Optional[float] = Query(None, ge=0, le=1)
-):
-    """
-    Obtenir la prédiction pour un client par son ID.
-    
-    Note: Cette endpoint nécessite que les données du client soient disponibles
-    dans la base de données ou le fichier de données.
-    """
-    # Cette implémentation est un placeholder
-    # En production, vous chargeriez les données du client depuis une base de données
-    raise HTTPException(
-        status_code=501, 
-        detail="Endpoint non implémenté. Utilisez /predict avec les données du client."
-    )
 
 
 # ---------------------------------------------------------------------------

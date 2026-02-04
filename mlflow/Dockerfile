@@ -43,14 +43,30 @@ COPY notebooks/mlruns/. /app/mlruns/
 # Nettoyer et corriger les chemins pour Docker
 RUN echo "🔧 Correction des chemins MLflow..." && \
     rm -rf /app/mlruns/.trash 2>/dev/null || true && \
-    # Corriger artifact_location dans les experiments (chemin absolu)
-    find /app/mlruns -maxdepth 2 -name "meta.yaml" -exec sed -i 's|artifact_location:.*|artifact_location: file:///app/mlruns|g' {} \; 2>/dev/null || true && \
-    # Corriger artifact_uri dans les runs (chemin absolu vers artifacts)
-    find /app/mlruns -path '*/*[0-9a-f]*/meta.yaml' -exec sed -i 's|artifact_uri:.*|artifact_uri: file:///app/mlruns|g' {} \; 2>/dev/null || true && \
-    # Créer les répertoires artifacts manquants
-    find /app/mlruns -path '*/*[0-9a-f]*/meta.yaml' -exec mkdir -p {}/artifacts \; 2>/dev/null || true && \
+    rm -rf /app/mlruns/models 2>/dev/null || true && \
+    # Corriger TOUS les meta.yaml d'experiments
+    for f in /app/mlruns/*/meta.yaml; do \
+        if [ -f "$f" ]; then \
+            experiment_dir=$(dirname "$f"); \
+            exp_id=$(basename "$experiment_dir"); \
+            sed -i "s|artifact_location:.*|artifact_location: file:///app/mlruns/${exp_id}|g" "$f" 2>/dev/null || true; \
+            echo "✅ Fixed: $f"; \
+        fi; \
+    done && \
+    # Corriger TOUS les meta.yaml des runs
+    for f in /app/mlruns/*/*/meta.yaml; do \
+        if [ -f "$f" ]; then \
+            run_dir=$(dirname "$f"); \
+            run_id=$(basename "$run_dir"); \
+            exp_dir=$(dirname "$run_dir"); \
+            exp_id=$(basename "$exp_dir"); \
+            sed -i "s|artifact_uri:.*|artifact_uri: file:///app/mlruns/${exp_id}/${run_id}/artifacts|g" "$f" 2>/dev/null || true; \
+            mkdir -p "${run_dir}/artifacts" 2>/dev/null || true; \
+            echo "✅ Fixed run: $f"; \
+        fi; \
+    done && \
     echo "✅ MLflow configuré" && \
-    ls -la /app/mlruns/
+    find /app/mlruns -name "meta.yaml" -exec cat {} \; 2>/dev/null | head -20
 
 # Exposer le port
 EXPOSE ${PORT}
