@@ -220,19 +220,42 @@ docker run -p 5000:5000 home-credit-mlflow
 - Détection du data drift et prediction drift
 - Alertes sur la dérive des features
 
-### 5. 🌐 API REST
+### 5. 🌐 API REST (Pydantic v2 compatible)
 
 | Endpoint | Méthode | Description |
 |----------|---------|-------------|
 | `/` | GET | Page d'accueil |
 | `/health` | GET | Health check (vérifie que les modèles sont chargés) |
-| `/predict` | POST | Prédiction unique |
+| `/predict` | POST | Prédiction unique - **Supporte 3 formats JSON** |
 | `/predict/batch` | POST | Prédictions en batch |
 | `/predict/explain` | POST | Prédiction + SHAP |
 | `/model/info` | GET | Infos du modèle (seuil, version, features) |
 | `/model/features` | GET | Liste des features |
 
-**Note** : L'API charge automatiquement les modèles au démarrage depuis `/app/models/` dans Docker.
+**Formats supportés pour `/predict`** (Pydantic v2 + ConfigDict) :
+
+```json
+{
+  "features": {
+    "AMT_INCOME_TOTAL": 150000,
+    "AMT_CREDIT": 500000,
+    "DAYS_BIRTH": -18000,
+    ...
+  }
+}
+```
+
+Les 2 formats alternatifs sont aussi acceptés (grâce à `extra="allow"`) :
+
+```json
+{"data": {...}}  ✅ Format alternatif
+{field1: val1, field2: val2, ...}  ✅ Format plat (colonnes supplémentaires ignorées)
+```
+
+**Notes** :
+- L'API charge automatiquement les modèles au démarrage depuis `/app/models/` dans Docker.
+- Format JSON flexible : `features`, `data`, ou format plat acceptés.
+- Toutes les colonnes supplémentaires ignorées (mode `extra="allow"`).
 
 ### 6. 🔄 CI/CD
 
@@ -309,7 +332,45 @@ pytest tests/test_api.py -v         # Tests API
 
 **Note** : Tests simples et rapides en CI/CD - Aucun test de déploiement (Render testé manuellement).
 
-## 🔁 CI/CD et Déploiement
+## � Versions Critiques - Pydantic v2
+
+### Compatibilité Pydantic v2
+
+L'API utilise **Pydantic v2.5+** avec une configuration ConfigDict pour gérer les modèles de requête de façon flexible :
+
+```python
+# api/models.py
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Optional, Dict, Any
+
+class PredictionRequest(BaseModel):
+    features: Optional[Dict[str, Any]] = Field(default=None)
+    data: Optional[Dict[str, Any]] = Field(default=None)
+    
+    model_config = ConfigDict(
+        extra="allow",          # Accepte aussi les champs supplémentaires
+        populate_by_name=True   # Accepte les alias
+    )
+```
+
+**Pourquoi cette approche ?**
+- ✅ Évite l'erreur 422 "Field required" avec Pydantic v2
+- ✅ Accepte 3 formats JSON différents (`features`, `data`, format plat)
+- ✅ Ignore les colonnes supplémentaires via `extra="allow"`
+- ✅ Compatible avec les requêtes du dashboard Streamlit
+
+### Table de versions
+
+| Dépendance | Version | Raison |
+|-----------|---------|--------|
+| **Pydantic** | >=2.5.0,<3.0.0 | Compatibilité ConfigDict + Optional fields |
+| **FastAPI** | >=0.104.0,<0.116.0 | Compatibilité Pydantic v2.5+ |
+| **MLflow** | 2.9.2 | Léger (~50MB) vs versions récentes (~200MB+) |
+| **Python** | 3.10+ | tomli conditionnel pour pyproject.toml (Python < 3.11) |
+
+⚠️ **Si vous updatez ces versions, testez localement d'abord !** Les changements Pydantic v3 pourraient casser la validation.
+
+## �🔁 CI/CD et Déploiement
 
 ### Architecture CI/CD
 
@@ -431,6 +492,52 @@ curl -X POST "http://localhost:8000/predict" \
 - ✅ **Feature engineering automatique** - Ratios, moyennes et conversions créés automatiquement
 - ✅ **Format du JSON flexible** - Accepte `{"features": {...}}`, `{"data": {...}}` ou format plat
 - ⚠️ **Seuil par défaut : 0.44** - Optimisé pour minimiser le coût métier (FN=10, FP=1)
+
+## 🐛 Problèmes Courants
+
+### Erreur 422 "Field required" sur `/predict`
+
+**Cause** : Incompatibilité Pydantic v2 avec les champs optionnels mal configurés
+
+**Solution** : Vérifiez que vous utilisez `Pydantic>=2.5.0` et envoyez le JSON avec le format correct :
+
+```json
+{"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, ...}}
+```
+
+Consulter [Versions Critiques - Pydantic v2](#-versions-critiques---pydantic-v2) pour les détails.
+
+### MLflow crashing avec "Out of Memory" ou "SIGKILL" sur Render
+
+**Cause** : Utilisation de `mlflow server --workers N` qui consomme trop de RAM (512MB max sur tier gratuit)
+
+**Solution** : Le Dockerfile utilise maintenant `mlflow ui` (~150MB) au lieu de `mlflow server` (~400MB)
+
+**Vérification** : Consultez [mlflow/Dockerfile](mlflow/Dockerfile) et [mlflow/README.md](mlflow/README.md)
+
+| Configuration | RAM | Status |
+|---------------|-----|--------|
+| **mlflow ui** (actuel) | ~150-200 MB | ✅ Fonctionne |
+| mlflow server --workers 1 | ~250-300 MB | ⚠️ Instable |
+| mlflow server (défaut) | ~400-500 MB | ❌ CRASH |
+
+### Dashboard ne peut pas se connecter à l'API
+
+**Cause** : Variables d'environnement `API_URL` ou `MLFLOW_URL` non configurées
+
+**Solution (Render)** :
+1. Allez sur le service **home-scoring-dashboard**
+2. **Environment** → Ajouter/modifier :
+   - `API_URL=https://home-scoring-api.onrender.com`
+   - `MLFLOW_URL=https://home-scoring-mlflow.onrender.com`
+3. Redémarrer le service (Deploy → Select Commit → Deploy)
+
+**Solution (Local)** :
+```bash
+export API_URL=http://localhost:8000
+export MLFLOW_URL=http://localhost:5000
+streamlit run streamlit_app/app.py
+```
 
 ## 🤝 Contribution
 

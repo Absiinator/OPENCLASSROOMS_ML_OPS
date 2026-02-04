@@ -3,8 +3,13 @@
 # Dépendances pour l'API FastAPI
 
 # Framework API
-fastapi>=0.104.0
+fastapi>=0.104.0,<0.116.0
 uvicorn>=0.24.0
+
+# Validation - IMPORTANT: Version pinée pour compatibilité
+# Pydantic v2.5+ a une meilleure gestion des Optional fields
+pydantic>=2.5.0,<3.0.0
+
 python-multipart>=0.0.6
 
 # Data Science
@@ -15,9 +20,6 @@ lightgbm>=4.0.0
 
 # Sérialisation
 joblib>=1.3.0
-
-# Validation
-pydantic>=2.0.0
 
 # HTTP Client (pour tests)
 httpx>=0.25.0

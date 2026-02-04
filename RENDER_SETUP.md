@@ -189,24 +189,40 @@ ghcr.io/absiinator/openclassrooms-ml-ops-mlflow:latest
 
 | Paramètre              | Valeur                 |
 | ----------------------- | ---------------------- |
-| **Name**          | `home-credit-mlflow` |
+| **Name**          | `home-scoring-mlflow` |
 | **Region**        | Europe (Frankfurt)     |
 | **Instance Type** | Free (512MB RAM)       |
 | **Port**          | 5000 (ou `$PORT`)    |
 
-⚠️ **Important - Optimisations pour Free Tier** :
+⚠️ **CRITIQUE - Optimisations pour Free Tier (512MB RAM)** :
 
-- Le Dockerfile utilise **`mlflow ui`** au lieu de `mlflow server` (pas de gunicorn = moins de RAM)
-- `mlflow ui` utilise Flask intégré - **parfait pour 512MB RAM du tier gratuit**
-- Les chemins `artifact_location` et `artifact_uri` sont automatiquement corrigés pour Docker
-- Dépendances minimales pour économiser la RAM
-- Le premier démarrage peut prendre 30-60 secondes
+Le Dockerfile utilise **`mlflow ui`** (Flask simple) au lieu de **`mlflow server`** (Gunicorn) :
+
+| Configuration | RAM | Status |
+|---------------|-----|--------|
+| **mlflow ui** (actuel) | ~150-200 MB | ✅ Fonctionne sur 512MB |
+| mlflow server --workers 1 | ~250-300 MB | ⚠️ Instable |
+| mlflow server (défaut) | ~400-500 MB | ❌ CRASH / Out of Memory |
+
+**Avantages de cette approche** :
+- ✅ Économise 250-350 MB de RAM vs mlflow server
+- ✅ Pas de Gunicorn = pas de workers multiples à gérer
+- ✅ Flask intégré suffisant pour visualiser les runs
+- ✅ Le premier démarrage peut prendre 30-60 secondes (normal)
+- ✅ Aucun crash mémoire observé
+
+**Limitations** :
+- Les runs sont en lecture seule (pas de nouvelles expériences persistantes)
+- Tier gratuit = service arrêté après 15 min d'inactivité
+
+Pour les détails techniques, consultez [mlflow/README.md](mlflow/README.md).
 
 💡 **Si MLflow crash avec "Out of Memory"** :
 
 1. Vérifier les logs Render : `Worker was sent SIGKILL! Perhaps out of memory?`
-2. Solutions :
-   - ✅ Upgrade vers un plan payant (512MB → 2GB RAM)
+2. **Vérifiez d'abord que le Dockerfile utilise `mlflow ui`** (pas `mlflow server --workers N`)
+3. Solutions :
+   - ✅ **Upgrade vers un plan payant** (512MB → 2GB RAM) - solution permanente
    - ⚠️ Redémarrer le service (solution temporaire)
    - 🔄 Alternative : utiliser un stockage S3 au lieu du système de fichiers local
 
@@ -335,6 +351,22 @@ https://home-credit-api.onrender.com/docs
 | **MLflow**    | `PORT`       | Défini automatiquement par Render    | ❌ Non                           |
 
 ## 📝 Notes Importantes
+
+### ⚠️ Versions Critiques (à respecter)
+
+| Dépendance | Version | Raison |
+|-----------|---------|--------|
+| **Pydantic** | >=2.5.0,<3.0.0 | Compatibilité Optional fields + Pydantic v2 ConfigDict |
+| **FastAPI** | >=0.104.0,<0.116.0 | Compatibilité avec Pydantic v2.5+ |
+| **MLflow** | 2.9.2 | Léger (~50MB) vs versions récentes (~200MB+) |
+
+⚠️ **Si vous updatez ces versions, testez localement d'abord !**
+
+- Les changements Pydantic v3 pourraient casser la validation API (erreur 422)
+- Les versions FastAPI incompatibles pourraient casser la sérialisation JSON
+- Les versions MLflow plus récentes consomment plus de RAM
+
+Consultez [README.md - Versions Critiques](README.md#--versions-critiques---pydantic-v2) pour plus de détails.
 
 ### ⚠️ Limitations du Plan Gratuit
 

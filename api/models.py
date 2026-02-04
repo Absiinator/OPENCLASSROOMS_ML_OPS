@@ -3,10 +3,11 @@ Schémas Pydantic pour l'API de scoring crédit.
 ==============================================
 
 Définit les modèles de données pour les requêtes et réponses de l'API.
+Compatible Pydantic v2 et FastAPI.
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional, List, Dict, Any, Union
 from enum import Enum
 
 
@@ -42,14 +43,22 @@ class PredictionRequest(BaseModel):
          -d '{"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, "EXT_SOURCE_1": 0.5}}'
     ```
     """
-    # Champs optionnels avec None comme default - CRUCIAL pour Pydantic v2
-    # Sans le Field default, Pydantic v2 les treat comme required
-    features: Optional[Dict[str, Any]] = None
-    data: Optional[Dict[str, Any]] = None
+    # IMPORTANT: Pydantic v2 avec Optional et default=None
+    # Les deux champs sont optionnels pour supporter plusieurs formats
+    features: Optional[Dict[str, Any]] = Field(
+        default=None, 
+        description="Features du client (format recommandé)"
+    )
+    data: Optional[Dict[str, Any]] = Field(
+        default=None, 
+        description="Alias pour features (compatibilité)"
+    )
     
-    model_config = {
-        "extra": "allow",  # Accepter les champs supplémentaires (format plat)
-        "json_schema_extra": {
+    # Configuration Pydantic v2
+    model_config = ConfigDict(
+        extra="allow",  # Accepter les champs supplémentaires (format plat)
+        populate_by_name=True,
+        json_schema_extra={
             "examples": [
                 {
                     "features": {
@@ -74,7 +83,7 @@ class PredictionRequest(BaseModel):
                 }
             ]
         }
-    }
+    )
     
     def get_features_dict(self) -> Dict[str, Any]:
         """Retourne les features depuis le payload reçu.
@@ -85,18 +94,18 @@ class PredictionRequest(BaseModel):
         3. Retourne tous les champs supplémentaires (format plat)
         """
         # Cas 1: Format {"features": {...}}
-        if self.features is not None and isinstance(self.features, dict):
+        if self.features is not None and isinstance(self.features, dict) and len(self.features) > 0:
             print(f"[API /predict] Format 'features' détecté avec {len(self.features)} champs")
             return self.features
         
         # Cas 2: Format {"data": {...}}
-        if self.data is not None and isinstance(self.data, dict):
+        if self.data is not None and isinstance(self.data, dict) and len(self.data) > 0:
             print(f"[API /predict] Format 'data' détecté avec {len(self.data)} champs")
             return self.data
         
-        # Cas 3: Format plat - retourner les champs extra
-        extra_fields = getattr(self, '__pydantic_extra__', {}) or {}
-        if extra_fields:
+        # Cas 3: Format plat - retourner les champs extra (Pydantic v2)
+        extra_fields = getattr(self, '__pydantic_extra__', None) or {}
+        if extra_fields and len(extra_fields) > 0:
             print(f"[API /predict] Format plat détecté avec {len(extra_fields)} champs")
             return extra_fields
         

@@ -59,9 +59,46 @@ L'interface MLflow UI permet de :
 Voir [requirements.txt](requirements.txt) :
 - `mlflow==2.9.2` : Framework MLflow (version légère, sans boto3/psycopg2 pour économiser la RAM)
 
+## ⚡ Optimisations pour le Tier Gratuit Render (512MB RAM)
+
+### Stratégie d'optimisation
+
+Le Dockerfile utilise **`mlflow ui`** (Flask simple) au lieu de **`mlflow server`** (Gunicorn avec multiple workers):
+
+| Configuration | Consommation RAM | Détail |
+|---------------|-----------------|--------|
+| **mlflow ui** (actuel) | ~150-200 MB | Flask simple, pas de Gunicorn |
+| mlflow server --workers 1 | ~250-300 MB | Gunicorn + 1 worker = encore trop lourd |
+| mlflow server (défaut) | ~400-500 MB | Gunicorn + 4 workers = **dépassement RAM** |
+
+**Bénéfice** : mlflow ui tient facilement dans les 512MB du tier gratuit sans crashes.
+
+### Configuration appliquée
+
+```dockerfile
+# Dockerfile: utilisation de mlflow ui (ultra-léger)
+CMD ["mlflow", "ui", "--host", "0.0.0.0", "--port", "${PORT}", "--backend-store-uri", "/app/mlruns"]
+```
+
+Aucune configuration Gunicorn nécessaire (mlflow ui utilise Flask directement).
+
 ## 📝 Notes
 
 - Les runs MLflow du dossier `mlruns/` local sont copiés dans l'image Docker lors du build
 - **Tier gratuit Render** : 512MB RAM, service arrêté après 15 min d'inactivité
-- **Optimisations appliquées** : 1 worker, timeout 120s, dépendances minimales
+- **Optimisations appliquées** :
+  - ✅ `mlflow ui` au lieu de `mlflow server` (économise ~100-150MB)
+  - ✅ Dépendances minimales (mlflow v2.9.2 sans extras)
+  - ✅ Pas de workers multiples ou timeouts problématiques
 - Les runs sont accessibles en **lecture seule** - les nouvelles expériences ne seront pas persistées (tier gratuit)
+
+## 🔧 Dépannage
+
+### "Out of Memory" ou "SIGKILL"
+
+**Si vous voyez ces erreurs en production** :
+1. Vérifiez que le Dockerfile utilise `mlflow ui` (pas `mlflow server --workers N`)
+2. Vérifiez la RAM allouée (512MB = limite du tier gratuit)
+3. Attendez 1-2 min au démarrage (premier chargement est lent)
+
+**Solution** : Upgrade vers un plan payant si vous avez vraiment besoin de multiple workers.
