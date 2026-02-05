@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query, Depends
+from fastapi import FastAPI, HTTPException, Query, Depends, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
@@ -58,6 +58,50 @@ REPORTS_DIR = Path(__file__).parent.parent / "reports"
 model = None
 preprocessor = None
 config = None
+
+PREDICT_EXAMPLES = PredictionRequest.model_config.get("json_schema_extra", {}).get("examples", [])
+
+MINIMAL_FEATURES_SPEC = [
+    ("AMT_INCOME_TOTAL", "float", "Revenu annuel total (€)"),
+    ("AMT_CREDIT", "float", "Montant du crédit demandé (€)"),
+    ("AMT_ANNUITY", "float", "Annuité du crédit (€)"),
+    ("AMT_GOODS_PRICE", "float", "Prix du bien financé (€)"),
+    ("DAYS_BIRTH", "int", "Âge en jours (valeur négative)"),
+    ("DAYS_EMPLOYED", "int", "Ancienneté emploi en jours (valeur négative)"),
+    ("CNT_CHILDREN", "int", "Nombre d'enfants"),
+    ("CODE_GENDER_M", "int", "1=Homme, 0=Femme"),
+    ("FLAG_OWN_CAR", "int", "1=Oui, 0=Non"),
+    ("FLAG_OWN_REALTY", "int", "1=Oui, 0=Non"),
+    ("EXT_SOURCE_1", "float", "Score externe 1 (0-1)"),
+    ("EXT_SOURCE_2", "float", "Score externe 2 (0-1)"),
+    ("EXT_SOURCE_3", "float", "Score externe 3 (0-1)"),
+    ("REGION_RATING_CLIENT", "int", "Note région (1-3)"),
+    ("CREDIT_INCOME_RATIO", "float", "Ratio crédit / revenu"),
+    ("ANNUITY_INCOME_RATIO", "float", "Ratio annuité / revenu"),
+    ("EXT_SOURCE_MEAN", "float", "Moyenne des scores externes"),
+]
+
+MINIMAL_FEATURES_DOC = "\n".join(
+    [f"- `{name}` ({dtype}) : {desc}" for name, dtype, desc in MINIMAL_FEATURES_SPEC]
+)
+
+PREDICT_OPENAPI_EXAMPLES = {
+    "minimal_17": {
+        "summary": "Jeu minimal (17 features)",
+        "description": "Les 17 features minimales nécessaires au pipeline.",
+        "value": PREDICT_EXAMPLES[0] if len(PREDICT_EXAMPLES) > 0 else {}
+    },
+    "minimal_17_alt": {
+        "summary": "Jeu minimal (exemple alternatif)",
+        "description": "Autres valeurs plausibles pour les 17 features.",
+        "value": PREDICT_EXAMPLES[1] if len(PREDICT_EXAMPLES) > 1 else {}
+    },
+    "categorical_example": {
+        "summary": "Exemple avec variables catégorielles",
+        "description": "Certaines variables peuvent être envoyées en chaînes (catégorielles).",
+        "value": PREDICT_EXAMPLES[2] if len(PREDICT_EXAMPLES) > 2 else {}
+    },
+}
 
 
 def get_model():
@@ -172,6 +216,17 @@ def _align_features_for_preprocessor(df: pd.DataFrame, preprocessor: Any) -> pd.
     # Réordonner et supprimer les colonnes non attendues
     df = df[expected]
     return df
+
+
+def _extract_features_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Extrait les features depuis le payload (features/data ou dict brut)."""
+    if not isinstance(payload, dict):
+        return {}
+    if isinstance(payload.get("features"), dict):
+        return payload["features"]
+    if isinstance(payload.get("data"), dict):
+        return payload["data"]
+    return {}
 
 
 def load_model_artifacts():
@@ -338,7 +393,26 @@ async def model_info_endpoint(info: dict = Depends(get_model_info)):
 
 @app.post("/predict", response_model=PredictionResponse, tags=["Prediction"])
 async def predict(
-    request: PredictionRequest,
+    payload: Dict[str, Any] = Body(
+        ...,
+        description=(
+            "Payload avec `features` (obligatoire). `data` accepté en compatibilité.\n\n"
+            "### Format attendu\n"
+            "```\n"
+            "{ \"features\": { ... } }\n"
+            "```\n\n"
+            "### Features minimales (17)\n"
+            f"{MINIMAL_FEATURES_DOC}\n\n"
+            "### Types & règles\n"
+            "- Les variables **catégorielles** sont des chaînes (ex: `NAME_INCOME_TYPE`).\n"
+            "- Les variables **binaires** sont des `int` (0/1).\n"
+            "- Les valeurs manquantes sont acceptées (imputation + MISSING).\n"
+            "- **⚠️ Règle stricte** : le payload doit contenir `features` (obligatoire).\n"
+            "- Les variables supplémentaires du dataset sont acceptées si disponibles.\n"
+            "- Les colonnes attendues correspondent aux **colonnes d'origine** du dataset Home Credit."
+        ),
+        openapi_examples=PREDICT_OPENAPI_EXAMPLES
+    ),
     threshold: Optional[float] = Query(None, ge=0, le=1, description="Seuil personnalisé"),
     model_dep = Depends(get_model),
     preprocessor_dep = Depends(get_preprocessor)
@@ -379,6 +453,7 @@ async def predict(
     
     **Notes** :
     - L'API traite uniquement le champ `features`.
+    - `data` est aussi accepté comme alias de `features`.
     - Les variables catégorielles sont envoyées en **chaînes de caractères**.
     - Les valeurs manquantes sont imputées (médiane) et les catégories inconnues sont mappées sur **MISSING**.
     
@@ -392,10 +467,7 @@ async def predict(
     # === LOGS DEBUG DÉTAILLÉS ===
     print("=" * 60)
     print(f"[API /predict] ===== NOUVELLE REQUÊTE =====")
-    print(f"[API /predict] Type de request: {type(request)}")
-    print(f"[API /predict] request.features: {request.features is not None}")
-    if hasattr(request, '__pydantic_extra__'):
-        print(f"[API /predict] Extra fields: {request.__pydantic_extra__}")
+    print(f"[API /predict] Type de payload: {type(payload)}")
     
     used_model = model_dep or model
     used_preprocessor = preprocessor_dep or preprocessor
@@ -405,8 +477,8 @@ async def predict(
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        # Extraire les features du request
-        client_dict = request.get_features_dict()
+        # Extraire les features du payload
+        client_dict = _extract_features_from_payload(payload)
         print(f"[API /predict] Features extraites: {len(client_dict)} champs")
         print(f"[API /predict] Clés: {list(client_dict.keys())[:5]}...")
 
@@ -469,7 +541,25 @@ async def predict(
 
 @app.post("/predict/simple", tags=["Prediction"])
 async def predict_simple(
-    request: PredictionRequest,
+    payload: Dict[str, Any] = Body(
+        ...,
+        description=(
+            "Payload avec `features` (obligatoire). `data` accepté en compatibilité.\n\n"
+            "### Format attendu\n"
+            "```\n"
+            "{ \"features\": { ... } }\n"
+            "```\n\n"
+            "### Features minimales (17)\n"
+            f"{MINIMAL_FEATURES_DOC}\n\n"
+            "### Types & règles\n"
+            "- Catégorielles = chaînes\n"
+            "- Binaires = int (0/1)\n"
+            "- Valeurs manquantes acceptées\n"
+            "- **⚠️ Règle stricte** : le payload doit contenir `features` (obligatoire).\n"
+            "- Colonnes = colonnes d'origine du dataset Home Credit."
+        ),
+        openapi_examples=PREDICT_OPENAPI_EXAMPLES
+    ),
     threshold: Optional[float] = Query(None, ge=0, le=1),
     model_dep = Depends(get_model),
     preprocessor_dep = Depends(get_preprocessor)
@@ -485,8 +575,9 @@ async def predict_simple(
     Notes:
     - Catégorielles en chaîne
     - Valeurs manquantes gérées via imputation
+    - `data` est accepté comme alias de `features` (compatibilité)
     """
-    print(f"[API /predict/simple] Requête reçue avec {len(request.features)} features")
+    print(f"[API /predict/simple] Requête reçue avec payload dict")
     
     used_model = model_dep or model
     used_preprocessor = preprocessor_dep or preprocessor
@@ -495,7 +586,7 @@ async def predict_simple(
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     
     try:
-        client_dict = request.get_features_dict()
+        client_dict = _extract_features_from_payload(payload)
         if not client_dict:
             raise HTTPException(status_code=400, detail="Aucune feature fournie")
         
@@ -663,7 +754,25 @@ async def predict_batch(
 
 @app.post("/predict/explain", response_model=ExplanationResponse, tags=["Explanation"])
 async def explain_prediction(
-    request: PredictionRequest,
+    payload: Dict[str, Any] = Body(
+        ...,
+        description=(
+            "Payload avec `features` (obligatoire). `data` accepté en compatibilité.\n\n"
+            "### Format attendu\n"
+            "```\n"
+            "{ \"features\": { ... } }\n"
+            "```\n\n"
+            "### Features minimales (17)\n"
+            f"{MINIMAL_FEATURES_DOC}\n\n"
+            "### Types & règles\n"
+            "- Catégorielles = chaînes\n"
+            "- Binaires = int (0/1)\n"
+            "- Valeurs manquantes acceptées\n"
+            "- **⚠️ Règle stricte** : le payload doit contenir `features` (obligatoire).\n"
+            "- Colonnes = colonnes d'origine du dataset Home Credit."
+        ),
+        openapi_examples=PREDICT_OPENAPI_EXAMPLES
+    ),
     model_dep = Depends(get_model),
     preprocessor_dep = Depends(get_preprocessor),
     explainer_dep = Depends(get_explainer)
@@ -682,6 +791,7 @@ async def explain_prediction(
     Notes:
     - Catégorielles en chaîne
     - Valeurs manquantes gérées via imputation
+    - `data` est accepté comme alias de `features` (compatibilité)
     """
     used_model = model_dep or model
     used_preprocessor = preprocessor_dep or preprocessor
@@ -692,7 +802,7 @@ async def explain_prediction(
     
     try:
         # Extraire les features
-        client_dict = request.get_features_dict()
+        client_dict = _extract_features_from_payload(payload)
 
         # Vérifier que le payload contient des données
         if not isinstance(client_dict, dict) or not client_dict:

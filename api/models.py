@@ -76,6 +76,27 @@ class PredictionRequest(BaseModel):
                 },
                 {
                     "features": {
+                        "AMT_INCOME_TOTAL": 135000.0,
+                        "AMT_CREDIT": 568800.0,
+                        "AMT_ANNUITY": 20560.5,
+                        "AMT_GOODS_PRICE": 450000.0,
+                        "DAYS_BIRTH": -19241,
+                        "DAYS_EMPLOYED": -2329,
+                        "CNT_CHILDREN": 0,
+                        "CODE_GENDER_M": 0,
+                        "FLAG_OWN_CAR": 0,
+                        "FLAG_OWN_REALTY": 1,
+                        "EXT_SOURCE_1": 0.7526,
+                        "EXT_SOURCE_2": 0.7897,
+                        "EXT_SOURCE_3": 0.1595,
+                        "REGION_RATING_CLIENT": 2,
+                        "CREDIT_INCOME_RATIO": 4.21,
+                        "ANNUITY_INCOME_RATIO": 0.15,
+                        "EXT_SOURCE_MEAN": 0.5673
+                    }
+                },
+                {
+                    "features": {
                         "NAME_CONTRACT_TYPE": "Cash loans",
                         "CODE_GENDER": "F",
                         "NAME_INCOME_TYPE": "Working",

@@ -24,6 +24,7 @@ import json
 import urllib.request
 import urllib.error
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
@@ -93,6 +94,11 @@ GITHUB_REPO_URL = os.getenv(
 if GITHUB_REPO_URL.endswith(".git"):
     GITHUB_REPO_URL = GITHUB_REPO_URL[:-4]
 
+INT_FEATURES = {
+    name for name, meta in REQUIRED_FEATURES.items()
+    if str(meta.get("type", "")).lower() == "int"
+}
+
 # Chemins pour données et rapports
 if os.path.exists("/app/data"):
     PROJECT_ROOT = "/app"
@@ -127,6 +133,42 @@ def resolve_github_link(target: str) -> str:
     return github_blob(target)
 
 
+def get_feature_importance_candidates() -> List[str]:
+    """Liste des chemins possibles pour feature_importance.csv."""
+    candidates = []
+    if os.path.exists(FEATURE_IMPORTANCE_PATH):
+        candidates.append(FEATURE_IMPORTANCE_PATH)
+
+    run_id = None
+    if os.path.exists(MODEL_CONFIG_PATH):
+        try:
+            with open(MODEL_CONFIG_PATH, "r", encoding="utf-8") as f:
+                run_id = json.load(f).get("run_id")
+        except Exception:
+            run_id = None
+    if run_id:
+        candidates.append(os.path.join(
+            PROJECT_ROOT,
+            "notebooks",
+            "mlruns",
+            "446811177754564983",
+            run_id,
+            "artifacts",
+            "feature_importance.csv"
+        ))
+
+    candidates.append(os.path.join(
+        PROJECT_ROOT,
+        "notebooks",
+        "mlruns",
+        "446811177754564983",
+        "169b2338d7224da2801ea8dda14d64e3",
+        "artifacts",
+        "feature_importance.csv"
+    ))
+    return candidates
+
+
 # ============================================
 # Fonctions utilitaires
 # ============================================
@@ -146,41 +188,7 @@ def load_reference_data() -> pd.DataFrame:
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_top_features_from_report(top_n: int = 15) -> List[str]:
     """Charge les features les plus importantes depuis le rapport (notebooks)."""
-    candidates = []
-    if os.path.exists(FEATURE_IMPORTANCE_PATH):
-        candidates.append(FEATURE_IMPORTANCE_PATH)
-
-    # Chemin issu du run MLflow (si disponible)
-    run_id = None
-    if os.path.exists(MODEL_CONFIG_PATH):
-        try:
-            with open(MODEL_CONFIG_PATH, "r", encoding="utf-8") as f:
-                run_id = json.load(f).get("run_id")
-        except Exception:
-            run_id = None
-    if run_id:
-        candidates.append(os.path.join(
-            PROJECT_ROOT,
-            "notebooks",
-            "mlruns",
-            "446811177754564983",
-            run_id,
-            "artifacts",
-            "feature_importance.csv"
-        ))
-
-    # Chemin explicite connu (fallback)
-    candidates.append(os.path.join(
-        PROJECT_ROOT,
-        "notebooks",
-        "mlruns",
-        "446811177754564983",
-        "169b2338d7224da2801ea8dda14d64e3",
-        "artifacts",
-        "feature_importance.csv"
-    ))
-
-    for path in candidates:
+    for path in get_feature_importance_candidates():
         if os.path.exists(path):
             try:
                 df = pd.read_csv(path)
@@ -190,6 +198,21 @@ def load_top_features_from_report(top_n: int = 15) -> List[str]:
             except Exception:
                 continue
     return []
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_feature_importance_rank() -> Dict[str, int]:
+    """Retourne un ranking d'importance (1 = plus important)."""
+    for path in get_feature_importance_candidates():
+        if os.path.exists(path):
+            try:
+                df = pd.read_csv(path)
+                if "feature" in df.columns and "importance" in df.columns:
+                    df = df.sort_values("importance", ascending=False).reset_index(drop=True)
+                    return {row["feature"]: idx + 1 for idx, row in df.iterrows()}
+            except Exception:
+                continue
+    return {}
 
 
 CE_EVIDENCE = [
@@ -529,6 +552,184 @@ def interpret_score(probability: float, threshold: float) -> dict:
         "probability_text": f"{probability*100:.1f}%",
         "threshold_text": f"{threshold*100:.1f}%"
     }
+
+
+def sort_features_by_importance(features: List[str], importance_rank: Dict[str, int]) -> List[str]:
+    """Trie les features par importance puis libellé."""
+    return sorted(
+        features,
+        key=lambda f: (importance_rank.get(f, 10**9), get_feature_label(f))
+    )
+
+
+CATEGORY_ORDER = [
+    "Finances",
+    "Scores externes",
+    "Ratios",
+    "Temporal",
+    "Identité",
+    "Famille",
+    "Emploi",
+    "Région",
+    "Habitat",
+    "Crédits bureau",
+    "Crédits précédents",
+    "Cartes de crédit",
+    "Remboursements",
+    "Autres"
+]
+
+
+def categorize_feature(feature_name: str) -> str:
+    """Retourne la catégorie principale d'une feature."""
+    name = feature_name.upper()
+    if name.startswith("AMT_") or any(tok in name for tok in ["INCOME", "CREDIT", "ANNUITY", "GOODS_PRICE"]):
+        return "Finances"
+    if "EXT_SOURCE" in name:
+        return "Scores externes"
+    if any(tok in name for tok in ["RATIO", "RATE", "PERCENT", "SHARE"]):
+        return "Ratios"
+    if name.startswith("DAYS_") or name.startswith("WEEKDAY") or name.startswith("HOUR"):
+        return "Temporal"
+    if name.startswith("NAME_") or "GENDER" in name or name.startswith("FLAG_") or name in {"CODE_GENDER_M"}:
+        return "Identité"
+    if "CHILD" in name or name.startswith("CNT_") or "FAM" in name:
+        return "Famille"
+    if any(tok in name for tok in ["OCCUPATION", "ORGANIZATION", "EMPLOY"]):
+        return "Emploi"
+    if "REGION" in name:
+        return "Région"
+    if any(tok in name for tok in [
+        "HOUSETYPE", "WALLSMATERIAL", "FONDKAPREMONT",
+        "EMERGENCYSTATE", "LIVING", "NONLIVING", "APARTMENT",
+        "ENTRANCES", "FLOOR", "YEARS_BUILD", "BUILDING", "ELEVATORS"
+    ]):
+        return "Habitat"
+    if name.startswith("BUREAU_"):
+        return "Crédits bureau"
+    if name.startswith("PREV_"):
+        return "Crédits précédents"
+    if name.startswith("CC_"):
+        return "Cartes de crédit"
+    if name.startswith("POS_") or name.startswith("INSTAL_"):
+        return "Remboursements"
+    return "Autres"
+
+
+def group_features_by_category(
+    features: List[str],
+    importance_rank: Dict[str, int]
+) -> List[tuple]:
+    """Groupe et trie les features par catégorie et importance."""
+    grouped: Dict[str, List[str]] = {}
+    for feat in features:
+        category = categorize_feature(feat)
+        grouped.setdefault(category, []).append(feat)
+
+    ordered = []
+    for category in CATEGORY_ORDER:
+        if category in grouped:
+            ordered.append((category, sort_features_by_importance(grouped.pop(category), importance_rank)))
+    for category in sorted(grouped.keys()):
+        ordered.append((category, sort_features_by_importance(grouped[category], importance_rank)))
+    return ordered
+
+
+def slugify(text: str) -> str:
+    """Transforme un texte en clé simple pour Streamlit."""
+    return re.sub(r"[^a-zA-Z0-9]+", "_", text).strip("_").lower()
+
+
+def should_use_slider(feature_name: str, range_info: Dict[str, Any]) -> bool:
+    """Retourne True si un slider est pertinent pour la variable."""
+    if not is_bounded_numeric(feature_name, range_info):
+        return False
+    min_val = range_info.get("min")
+    max_val = range_info.get("max")
+    if min_val is None or max_val is None or pd.isna(min_val) or pd.isna(max_val):
+        return False
+    span = float(max_val) - float(min_val)
+    name = feature_name.upper()
+    if 0 <= min_val and max_val <= 1:
+        return True
+    if any(tok in name for tok in ["RATIO", "RATE", "PERCENT", "SHARE"]) and span <= 100:
+        return True
+    if range_info.get("is_int") and span <= 20:
+        return True
+    if not range_info.get("is_int") and span <= 10:
+        return True
+    return False
+
+
+def coerce_feature_types(features: Dict[str, Any], ref_data: pd.DataFrame) -> Dict[str, Any]:
+    """Force des types cohérents (int/float) avant envoi à l'API."""
+    cleaned: Dict[str, Any] = {}
+    for key, value in features.items():
+        if value is None:
+            cleaned[key] = None
+            continue
+        if isinstance(value, float) and pd.isna(value):
+            cleaned[key] = None
+            continue
+        if key in INT_FEATURES:
+            try:
+                cleaned[key] = int(round(float(value)))
+            except Exception:
+                cleaned[key] = value
+            continue
+        if not ref_data.empty and key in ref_data.columns:
+            if pd.api.types.is_integer_dtype(ref_data[key]):
+                try:
+                    cleaned[key] = int(round(float(value)))
+                    continue
+                except Exception:
+                    pass
+        if isinstance(value, (np.floating, np.integer)):
+            cleaned[key] = value.item()
+        else:
+            cleaned[key] = value
+    return cleaned
+
+
+def safe_float(value: Any, default: float) -> float:
+    """Convertit en float avec fallback."""
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def safe_int(value: Any, default: int) -> int:
+    """Convertit en int avec fallback."""
+    try:
+        return int(round(float(value)))
+    except Exception:
+        return int(default)
+
+
+def load_local_model_info() -> Optional[Dict[str, Any]]:
+    """Fallback local des infos modèle si l'API est indisponible."""
+    if not os.path.exists(MODEL_CONFIG_PATH):
+        return None
+    try:
+        with open(MODEL_CONFIG_PATH, "r", encoding="utf-8") as f:
+            config_data = json.load(f)
+        model_path = os.path.join(PROJECT_ROOT, "models", "lgbm_model.joblib")
+        training_date = config_data.get("training_date")
+        if not training_date and os.path.exists(model_path):
+            ts = os.path.getmtime(model_path)
+            training_date = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+        metrics = config_data.get("metrics") or {}
+        return {
+            "model_name": config_data.get("model_name", "home_credit_model"),
+            "version": config_data.get("model_version", config_data.get("version", "N/A")),
+            "training_date": training_date,
+            "auc": metrics.get("auc"),
+            "accuracy": metrics.get("accuracy"),
+            "business_cost": metrics.get("business_cost")
+        }
+    except Exception:
+        return None
 
 
 def get_feature_explanation(feature_name: str) -> str:
@@ -898,42 +1099,78 @@ def render_numeric_inputs(
     if not features_list:
         return
     cols = st.columns(columns)
-    for idx, feat in enumerate(sorted(features_list, key=get_feature_label)):
+    for idx, feat in enumerate(features_list):
         default_val = ref_stats["numeric"].get(feat, 0.0)
         if default_val is None or pd.isna(default_val):
             default_val = 0.0
         current_val = st.session_state.client_features.get(feat, default_val)
         range_info = numeric_ranges.get(feat, {})
+        is_int = bool(range_info.get("is_int")) or feat in INT_FEATURES
+        current_val_num = safe_int(current_val, int(default_val)) if is_int else safe_float(current_val, float(default_val))
         with cols[idx % columns]:
-            if is_bounded_numeric(feat, range_info):
+            if should_use_slider(feat, range_info):
                 min_val = range_info.get("min", default_val)
                 max_val = range_info.get("max", default_val)
                 if min_val == max_val:
                     min_val, max_val = default_val - 1, default_val + 1
-                step = 1.0 if range_info.get("is_int") else 0.01
-                value = st.slider(
-                    get_feature_label(feat),
-                    min_value=float(min_val),
-                    max_value=float(max_val),
-                    value=float(current_val) if current_val is not None and not pd.isna(current_val) else float(default_val),
-                    step=step,
-                    help=get_feature_explanation(feat),
-                    key=f"{key_prefix}_slider_{feat}"
-                )
+                if is_int:
+                    min_int = int(np.floor(min_val))
+                    max_int = int(np.ceil(max_val))
+                    value = st.slider(
+                        get_feature_label(feat),
+                        min_value=min_int,
+                        max_value=max_int,
+                        value=int(current_val_num),
+                        step=1,
+                        help=get_feature_explanation(feat),
+                        key=f"{key_prefix}_slider_{feat}"
+                    )
+                else:
+                    value = st.slider(
+                        get_feature_label(feat),
+                        min_value=float(min_val),
+                        max_value=float(max_val),
+                        value=float(current_val_num),
+                        step=0.01,
+                        help=get_feature_explanation(feat),
+                        key=f"{key_prefix}_slider_{feat}"
+                    )
                 if show_raw_for_bounded:
                     value = st.number_input(
                         f"{get_feature_label(feat)} (valeur)",
-                        value=float(value),
+                        value=int(round(value)) if is_int else float(value),
                         help=get_feature_explanation(feat),
-                        key=f"{key_prefix}_input_{feat}"
+                        key=f"{key_prefix}_input_{feat}",
+                        step=1 if is_int else 0.01
                     )
             else:
-                value = st.number_input(
-                    get_feature_label(feat),
-                    value=float(current_val) if current_val is not None and not pd.isna(current_val) else float(default_val),
-                    help=get_feature_explanation(feat),
-                    key=f"{key_prefix}_input_{feat}"
-                )
+                if is_int:
+                    min_bound = range_info.get("min")
+                    max_bound = range_info.get("max")
+                    min_bound = int(np.floor(min_bound)) if min_bound is not None and not pd.isna(min_bound) else None
+                    max_bound = int(np.ceil(max_bound)) if max_bound is not None and not pd.isna(max_bound) else None
+                    value = st.number_input(
+                        get_feature_label(feat),
+                        value=int(current_val_num),
+                        min_value=min_bound,
+                        max_value=max_bound,
+                        help=get_feature_explanation(feat),
+                        key=f"{key_prefix}_input_{feat}",
+                        step=1
+                    )
+                else:
+                    value = st.number_input(
+                        get_feature_label(feat),
+                        value=float(current_val_num),
+                        help=get_feature_explanation(feat),
+                        key=f"{key_prefix}_input_{feat}",
+                        step=0.01
+                    )
+            if is_int:
+                try:
+                    value = int(round(float(value)))
+                except Exception:
+                    pass
             st.session_state.client_features[feat] = value
 
 
@@ -948,7 +1185,7 @@ def render_categorical_inputs(
     if not features_list:
         return
     cols = st.columns(columns)
-    for idx, feat in enumerate(sorted(features_list, key=get_feature_label)):
+    for idx, feat in enumerate(features_list):
         default_val = ref_stats["categorical"].get(feat, "MISSING")
         if default_val is None or pd.isna(default_val):
             default_val = "MISSING"
@@ -1191,19 +1428,15 @@ def render_sidebar(reference_data: pd.DataFrame):
 
         # Documentation
         st.header("🔗 Documentation")
-        st.link_button("Swagger", f"{API_URL}/docs", use_container_width=True)
+        st.link_button("API Doc", f"{API_URL}/docs", use_container_width=True)
         st.link_button("MLflow UI", MLFLOW_URL, use_container_width=True)
-        st.link_button("README Projet", github_blob("README.md"), use_container_width=True)
-        st.link_button("Guide Render", github_blob("RENDER_SETUP.md"), use_container_width=True)
-        st.link_button("README API", github_blob("api/README.md"), use_container_width=True)
-        st.link_button("README Dashboard", github_blob("streamlit_app/README.md"), use_container_width=True)
+        st.link_button("Repo GitHub", GITHUB_REPO_URL, use_container_width=True)
         st.link_button("Notebooks (dossier)", github_tree("notebooks"), use_container_width=True)
         with st.expander("Notebooks (liens directs)", expanded=False):
             st.link_button("01_EDA", github_blob("notebooks/01_EDA.ipynb"), use_container_width=True)
             st.link_button("02_Preprocessing", github_blob("notebooks/02_Preprocessing_Features.ipynb"), use_container_width=True)
             st.link_button("03_Model_Training", github_blob("notebooks/03_Model_Training_MLflow.ipynb"), use_container_width=True)
             st.link_button("04_Drift", github_blob("notebooks/04_Drift_Evidently.ipynb"), use_container_width=True)
-        st.link_button("Repo GitHub", GITHUB_REPO_URL, use_container_width=True)
 
         st.divider()
 
@@ -1221,6 +1454,8 @@ def render_sidebar(reference_data: pd.DataFrame):
         # Modèle
         st.header("🤖 Modèle")
         model_info = get_model_info()
+        if not model_info:
+            model_info = load_local_model_info()
         if model_info:
             st.write(f"Nom: **{model_info.get('model_name', 'N/A')}**")
             st.write(f"Version: **{model_info.get('version', 'N/A')}**")
@@ -1246,6 +1481,7 @@ def render_prediction_tab():
     ref_data = load_reference_data()
     ref_stats = compute_reference_stats(ref_data)
     numeric_ranges = compute_numeric_ranges(ref_data)
+    importance_rank = load_feature_importance_rank()
     top_from_report = load_top_features_from_report(25)
     important_features = set(top_from_report + list(REQUIRED_FEATURES.keys()))
     
@@ -1364,7 +1600,7 @@ def render_prediction_tab():
         if important_numeric:
             st.subheader("⭐ Variables numériques importantes (supplémentaires)")
             render_numeric_inputs(
-                important_numeric,
+                sort_features_by_importance(important_numeric, importance_rank),
                 ref_stats,
                 numeric_ranges,
                 key_prefix="important_num",
@@ -1374,7 +1610,7 @@ def render_prediction_tab():
         if important_cat:
             st.subheader("⭐ Variables catégorielles importantes (supplémentaires)")
             render_categorical_inputs(
-                important_cat,
+                sort_features_by_importance(important_cat, importance_rank),
                 ref_data,
                 ref_stats,
                 key_prefix="important_cat"
@@ -1385,24 +1621,31 @@ def render_prediction_tab():
                 st.caption("Toutes les variables avancées sont affichées pour modification directe.")
                 if other_numeric:
                     st.markdown("**Variables numériques avancées**")
-                    render_numeric_inputs(
-                        other_numeric,
-                        ref_stats,
-                        numeric_ranges,
-                        key_prefix="other_num"
-                    )
+                    for category, feats in group_features_by_category(other_numeric, importance_rank):
+                        cat_key = slugify(category)
+                        st.markdown(f"##### {category}")
+                        render_numeric_inputs(
+                            feats,
+                            ref_stats,
+                            numeric_ranges,
+                            key_prefix=f"other_num_{cat_key}"
+                        )
 
                 if other_cat:
                     st.markdown("**Variables catégorielles avancées**")
-                    render_categorical_inputs(
-                        other_cat,
-                        ref_data,
-                        ref_stats,
-                        key_prefix="other_cat"
-                    )
+                    for category, feats in group_features_by_category(other_cat, importance_rank):
+                        cat_key = slugify(category)
+                        st.markdown(f"##### {category}")
+                        render_categorical_inputs(
+                            feats,
+                            ref_data,
+                            ref_stats,
+                            key_prefix=f"other_cat_{cat_key}"
+                        )
     
     # Calculer les ratios automatiquement
     features = calculate_ratios(st.session_state.client_features)
+    features = coerce_feature_types(features, ref_data)
     st.session_state.current_features = features
     
     st.markdown("---")
@@ -1777,6 +2020,8 @@ def render_dataset_tab():
         return
 
     model_info = get_model_info()
+    if not model_info:
+        model_info = load_local_model_info()
     if model_info:
         st.markdown("### 🤖 Infos modèle")
         col_m1, col_m2, col_m3 = st.columns(3)

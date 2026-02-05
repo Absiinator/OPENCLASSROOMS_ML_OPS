@@ -54,7 +54,7 @@ def predict_client(features: Dict[str, Any]) -> Dict[str, Any]:
     """
     Effectue une prédiction pour un client.
     
-    Utilise l'endpoint /predict avec le format attendu par l'API.
+    Utilise l'endpoint /predict avec le format attendu par l'API (champ `features`).
     
     Args:
         features: Dictionnaire des caractéristiques du client
@@ -95,20 +95,6 @@ def predict_client(features: Dict[str, Any]) -> Dict[str, Any]:
             headers={"Content-Type": "application/json"}
         )
 
-        # Fallback simple si l'API attend encore "data" (compatibilité)
-        if response.status_code == 422:
-            try:
-                detail = response.json()
-            except Exception:
-                detail = response.text
-            if "data" in str(detail).lower():
-                response = requests.post(
-                    url,
-                    json={"data": features},
-                    timeout=TIMEOUT_PREDICT,
-                    headers={"Content-Type": "application/json"}
-                )
-
         if response.status_code == 200:
             return response.json()
 
@@ -137,7 +123,7 @@ def explain_prediction(features: Dict[str, Any]) -> Dict[str, Any]:
     Obtient l'explication de la prédiction avec les features importantes.
     
     Args:
-        features: Dictionnaire des caractéristiques du client (même format que predict)
+        features: Dictionnaire des caractéristiques du client (même format que predict, champ `features`)
     
     Returns:
         Dict avec probability, decision, top_features (liste des contributions)
@@ -151,20 +137,6 @@ def explain_prediction(features: Dict[str, Any]) -> Dict[str, Any]:
             timeout=TIMEOUT_PREDICT,
             headers={"Content-Type": "application/json"}
         )
-
-        # Fallback simple si l'API attend encore "data" (compatibilité)
-        if response.status_code == 422:
-            try:
-                detail = response.json()
-            except Exception:
-                detail = response.text
-            if "data" in str(detail).lower():
-                response = requests.post(
-                    url,
-                    json={"data": features},
-                    timeout=TIMEOUT_PREDICT,
-                    headers={"Content-Type": "application/json"}
-                )
 
         if response.status_code == 200:
             return response.json()
