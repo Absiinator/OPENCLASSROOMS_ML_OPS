@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query, Depends, Body
+from fastapi import FastAPI, HTTPException, Query, Depends, Body, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
@@ -84,6 +85,16 @@ MINIMAL_FEATURES_SPEC = [
 MINIMAL_FEATURES_DOC = "\n".join(
     [f"- `{name}` ({dtype}) : {desc}" for name, dtype, desc in MINIMAL_FEATURES_SPEC]
 )
+
+OPTIONAL_FEATURES_DOC = "\n".join([
+    "- **Catégorielles** : `NAME_INCOME_TYPE`, `NAME_EDUCATION_TYPE`, `NAME_FAMILY_STATUS`, "
+    "`NAME_HOUSING_TYPE`, `NAME_CONTRACT_TYPE`, `OCCUPATION_TYPE`, `ORGANIZATION_TYPE`, "
+    "`WEEKDAY_APPR_PROCESS_START`, etc.",
+    "- **Flags / binaires** : colonnes `FLAG_*`, `REG_*`, `LIVE_*`, `DEF_*`, `OBS_*`, etc.",
+    "- **Agrégées (si disponibles)** : colonnes préfixées `BUREAU_`, `PREV_`, `INST_`, `POS_`, `CC_`.",
+    "- **Constructions internes** : `create_application_features()` ajoute ratios et indicateurs "
+    "(ex: `CREDIT_INCOME_RATIO`, `ANNUITY_INCOME_RATIO`, `AGE_YEARS`, `EXT_SOURCE_MEAN`)."
+])
 
 PREDICT_OPENAPI_EXAMPLES = {
     "minimal_17": {
@@ -218,14 +229,13 @@ def _align_features_for_preprocessor(df: pd.DataFrame, preprocessor: Any) -> pd.
     return df
 
 
-def _extract_features_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Extrait les features depuis le payload (features/data ou dict brut)."""
+def _extract_features_from_payload(payload: Any) -> Dict[str, Any]:
+    """Extrait les features depuis le payload (features uniquement)."""
     if not isinstance(payload, dict):
         return {}
-    if isinstance(payload.get("features"), dict):
-        return payload["features"]
-    if isinstance(payload.get("data"), dict):
-        return payload["data"]
+    features = payload.get("features")
+    if isinstance(features, dict):
+        return features
     return {}
 
 
@@ -319,6 +329,18 @@ app = FastAPI(
     redoc_url=None
 )
 
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Force les erreurs de validation en 400 pour éviter les 422."""
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": "Payload invalide. Le corps doit contenir un objet JSON avec la clé `features`.",
+            "errors": exc.errors()
+        }
+    )
+
 # Configuration CORS
 app.add_middleware(
     CORSMiddleware,
@@ -393,10 +415,10 @@ async def model_info_endpoint(info: dict = Depends(get_model_info)):
 
 @app.post("/predict", response_model=PredictionResponse, tags=["Prediction"])
 async def predict(
-    payload: Dict[str, Any] = Body(
-        ...,
+    payload: Any = Body(
+        None,
         description=(
-            "Payload avec `features` (obligatoire). `data` accepté en compatibilité.\n\n"
+            "Payload avec `features` (obligatoire).\n\n"
             "### Format attendu\n"
             "```\n"
             "{ \"features\": { ... } }\n"
@@ -409,7 +431,16 @@ async def predict(
             "- Les valeurs manquantes sont acceptées (imputation + MISSING).\n"
             "- **⚠️ Règle stricte** : le payload doit contenir `features` (obligatoire).\n"
             "- Les variables supplémentaires du dataset sont acceptées si disponibles.\n"
-            "- Les colonnes attendues correspondent aux **colonnes d'origine** du dataset Home Credit."
+            "- Les colonnes attendues correspondent aux **colonnes d'origine** du dataset Home Credit.\n\n"
+            "### Colonnes optionnelles acceptées\n"
+            f"{OPTIONAL_FEATURES_DOC}\n\n"
+            "### Remarques\n"
+            "- Les colonnes manquantes sont automatiquement ajoutées en `NaN` puis imputées.\n"
+            "- L'API n'agrège pas les tables auxiliaires : si vous souhaitez utiliser "
+            "`BUREAU_`, `PREV_`, `INST_`, `POS_`, `CC_`, fournissez-les déjà agrégées.\n"
+            "- `create_application_features()` ajoute notamment : `AGE_YEARS`, `EMPLOYED_YEARS`, "
+            "`CREDIT_INCOME_RATIO`, `ANNUITY_INCOME_RATIO`, `EXT_SOURCE_MEAN`, "
+            "`DOCUMENTS_COUNT`, `CONTACTS_COUNT`."
         ),
         openapi_examples=PREDICT_OPENAPI_EXAMPLES
     ),
@@ -453,7 +484,6 @@ async def predict(
     
     **Notes** :
     - L'API traite uniquement le champ `features`.
-    - `data` est aussi accepté comme alias de `features`.
     - Les variables catégorielles sont envoyées en **chaînes de caractères**.
     - Les valeurs manquantes sont imputées (médiane) et les catégories inconnues sont mappées sur **MISSING**.
     
@@ -541,10 +571,10 @@ async def predict(
 
 @app.post("/predict/simple", tags=["Prediction"])
 async def predict_simple(
-    payload: Dict[str, Any] = Body(
-        ...,
+    payload: Any = Body(
+        None,
         description=(
-            "Payload avec `features` (obligatoire). `data` accepté en compatibilité.\n\n"
+            "Payload avec `features` (obligatoire).\n\n"
             "### Format attendu\n"
             "```\n"
             "{ \"features\": { ... } }\n"
@@ -556,7 +586,13 @@ async def predict_simple(
             "- Binaires = int (0/1)\n"
             "- Valeurs manquantes acceptées\n"
             "- **⚠️ Règle stricte** : le payload doit contenir `features` (obligatoire).\n"
-            "- Colonnes = colonnes d'origine du dataset Home Credit."
+            "- Colonnes = colonnes d'origine du dataset Home Credit.\n\n"
+            "### Colonnes optionnelles acceptées\n"
+            f"{OPTIONAL_FEATURES_DOC}\n\n"
+            "### Remarques\n"
+            "- Colonnes manquantes ajoutées en `NaN` puis imputées.\n"
+            "- Les agrégations auxiliaires (`BUREAU_`, `PREV_`, etc.) doivent être fournies si nécessaires.\n"
+            "- `create_application_features()` ajoute ratios/indicateurs (âge, emploi, scores externes, contacts)."
         ),
         openapi_examples=PREDICT_OPENAPI_EXAMPLES
     ),
@@ -575,7 +611,6 @@ async def predict_simple(
     Notes:
     - Catégorielles en chaîne
     - Valeurs manquantes gérées via imputation
-    - `data` est accepté comme alias de `features` (compatibilité)
     """
     print(f"[API /predict/simple] Requête reçue avec payload dict")
     
@@ -754,10 +789,10 @@ async def predict_batch(
 
 @app.post("/predict/explain", response_model=ExplanationResponse, tags=["Explanation"])
 async def explain_prediction(
-    payload: Dict[str, Any] = Body(
-        ...,
+    payload: Any = Body(
+        None,
         description=(
-            "Payload avec `features` (obligatoire). `data` accepté en compatibilité.\n\n"
+            "Payload avec `features` (obligatoire).\n\n"
             "### Format attendu\n"
             "```\n"
             "{ \"features\": { ... } }\n"
@@ -769,7 +804,13 @@ async def explain_prediction(
             "- Binaires = int (0/1)\n"
             "- Valeurs manquantes acceptées\n"
             "- **⚠️ Règle stricte** : le payload doit contenir `features` (obligatoire).\n"
-            "- Colonnes = colonnes d'origine du dataset Home Credit."
+            "- Colonnes = colonnes d'origine du dataset Home Credit.\n\n"
+            "### Colonnes optionnelles acceptées\n"
+            f"{OPTIONAL_FEATURES_DOC}\n\n"
+            "### Remarques\n"
+            "- Colonnes manquantes ajoutées en `NaN` puis imputées.\n"
+            "- Les agrégations auxiliaires (`BUREAU_`, `PREV_`, etc.) doivent être fournies si nécessaires.\n"
+            "- `create_application_features()` ajoute ratios/indicateurs (âge, emploi, scores externes, contacts)."
         ),
         openapi_examples=PREDICT_OPENAPI_EXAMPLES
     ),
@@ -791,7 +832,6 @@ async def explain_prediction(
     Notes:
     - Catégorielles en chaîne
     - Valeurs manquantes gérées via imputation
-    - `data` est accepté comme alias de `features` (compatibilité)
     """
     used_model = model_dep or model
     used_preprocessor = preprocessor_dep or preprocessor

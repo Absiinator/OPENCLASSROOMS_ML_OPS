@@ -1719,7 +1719,7 @@ def render_prediction_tab():
     
     st.markdown("---")
     if st.session_state.get("debug_mode"):
-        st.caption("Debug: payload envoyé = `features` + `data` (compatibilité).")
+        st.caption("Debug: envoi `features` uniquement (format attendu par l’API).")
 
     # Comparaison population (sans prédiction)
     render_comparison_section(features, ref_data, show_header=True)

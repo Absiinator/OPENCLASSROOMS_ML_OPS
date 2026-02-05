@@ -232,6 +232,8 @@ Le projet fournit **3 Dockerfiles** (API, Dashboard, MLflow). Chaque image est p
 **Notes** :
 - L'API charge automatiquement les modèles au démarrage depuis `/app/models/` dans Docker.
 - Seul le champ `features` est traité.
+- Les colonnes attendues sont les **colonnes d’origine Home Credit** (les agrégées `BUREAU_`, `PREV_`, etc. sont acceptées si déjà calculées).
+- Pour la liste complète des variables (minimum 17 + optionnelles), voir `api/README.md` et `streamlit_app/README.md`.
 
 ### 🏷️ Libellés des variables (Dashboard)
 

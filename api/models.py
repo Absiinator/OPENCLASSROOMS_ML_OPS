@@ -6,7 +6,7 @@ Définit les modèles de données pour les requêtes et réponses de l'API.
 Compatible Pydantic v2 et FastAPI.
 """
 
-from pydantic import BaseModel, Field, ConfigDict, AliasChoices
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List, Dict, Any
 from enum import Enum
 
@@ -33,7 +33,6 @@ class PredictionRequest(BaseModel):
     {
       "features": { ... }
     }
-    Compatibilité: "data" est accepté comme alias.
 
     Notes:
     - Les clés doivent correspondre aux noms de colonnes d'origine (dataset).
@@ -45,8 +44,7 @@ class PredictionRequest(BaseModel):
         description=(
             "Features du client (noms de colonnes d'origine). "
             "Valeurs numériques et catégorielles acceptées."
-        ),
-        validation_alias=AliasChoices("features", "data")
+        )
     )
 
     model_config = ConfigDict(

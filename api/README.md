@@ -28,6 +28,7 @@ L’API charge automatiquement les artefacts présents dans `models/` à la raci
 - `/predict/explain` : explication locale des features
 - `/model/info` : informations modèle
 - `/model/features` : importance des variables
+- `/model/feature-names` : liste des features internes (après prétraitement)
 
 ## Format de requête
 
@@ -40,6 +41,38 @@ L’API charge automatiquement les artefacts présents dans `models/` à la raci
   }
 }
 ```
+
+**Important** : l’API attend **uniquement** la clé `features`.
+En cas de payload invalide, l’API renvoie une **400** (pas de 422).
+
+## Variables attendues pour l’inférence
+
+Le modèle est entraîné sur les **colonnes d’origine Home Credit** (dataset `application_*` + agrégations).  
+Le pipeline applique `create_application_features()` (ratios, âge, stats EXT_SOURCE, etc.) et complète les colonnes manquantes par `NaN` puis imputation.
+Dans les notebooks (`02_Preprocessing_Features` et `03_Model_Training_MLflow`), l’entraînement utilise `include_supplementary=True`, ce qui ajoute des agrégations issues des tables auxiliaires. À l’inférence, ces colonnes sont **optionnelles** et seront imputées si absentes.
+
+Fonctions ajoutées automatiquement par `create_application_features()` (exemples) :
+- `AGE_YEARS`, `EMPLOYED_YEARS`
+- `CREDIT_INCOME_RATIO`, `ANNUITY_INCOME_RATIO`, `CREDIT_GOODS_RATIO`
+- `EXT_SOURCE_MEAN`, `EXT_SOURCE_STD`, `EXT_SOURCE_MIN`, `EXT_SOURCE_MAX`
+- `DOCUMENTS_COUNT`, `CONTACTS_COUNT`
+
+### ✅ Minimum recommandé (17 features)
+
+Finances : `AMT_INCOME_TOTAL`, `AMT_CREDIT`, `AMT_ANNUITY`, `AMT_GOODS_PRICE`  
+Temporel : `DAYS_BIRTH`, `DAYS_EMPLOYED`  
+Personnel : `CNT_CHILDREN`, `CODE_GENDER_M`, `FLAG_OWN_CAR`, `FLAG_OWN_REALTY`  
+Scores : `EXT_SOURCE_1`, `EXT_SOURCE_2`, `EXT_SOURCE_3`, `REGION_RATING_CLIENT`  
+Ratios : `CREDIT_INCOME_RATIO`, `ANNUITY_INCOME_RATIO`, `EXT_SOURCE_MEAN`
+
+### ✅ Colonnes optionnelles (si disponibles)
+
+- Catégorielles : `NAME_INCOME_TYPE`, `NAME_EDUCATION_TYPE`, `NAME_FAMILY_STATUS`,  
+  `NAME_HOUSING_TYPE`, `NAME_CONTRACT_TYPE`, `OCCUPATION_TYPE`, `ORGANIZATION_TYPE`, etc.
+- Flags : `FLAG_*`, `REG_*`, `LIVE_*`, `DEF_*`, `OBS_*`, etc.
+- Agrégées : préfixes `BUREAU_`, `PREV_`, `INST_`, `POS_`, `CC_` (si vous les avez déjà agrégées).
+
+➡️ **Le pipeline n’agrège pas les tables auxiliaires au runtime** : si vous voulez utiliser ces colonnes, fournissez-les déjà agrégées.
 
 ## Libellés côté dashboard
 

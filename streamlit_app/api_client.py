@@ -10,6 +10,8 @@ import requests
 import os
 from typing import Dict, Any, Optional
 
+
+
 # Configuration API depuis variables d'environnement
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
@@ -57,7 +59,7 @@ def predict_client(features: Dict[str, Any]) -> Dict[str, Any]:
     Utilise l'endpoint /predict avec le format attendu par l'API (champ `features`).
     
     Args:
-        features: Dictionnaire des caractéristiques du client
+        features: Dictionnaire des caractéristiques du client (clé `features`)
             Clés requises (17 features):
             - AMT_INCOME_TOTAL: float (revenu annuel)
             - AMT_CREDIT: float (montant du crédit demandé)
@@ -88,10 +90,10 @@ def predict_client(features: Dict[str, Any]) -> Dict[str, Any]:
     try:
         endpoint = "/predict"
         url = f"{API_URL}{endpoint}"
-        payload = {"features": features, "data": features}
+        payload_features = {"features": features}
         response = requests.post(
             url,
-            json=payload,
+            json=payload_features,
             timeout=TIMEOUT_PREDICT,
             headers={"Content-Type": "application/json"}
         )
@@ -132,10 +134,10 @@ def explain_prediction(features: Dict[str, Any]) -> Dict[str, Any]:
     """
     try:
         url = f"{API_URL}/predict/explain"
-        payload = {"features": features, "data": features}
+        payload_features = {"features": features}
         response = requests.post(
             url,
-            json=payload,
+            json=payload_features,
             timeout=TIMEOUT_PREDICT,
             headers={"Content-Type": "application/json"}
         )
