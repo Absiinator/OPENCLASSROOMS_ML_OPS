@@ -14,6 +14,7 @@ Déployable sur Render, Railway ou tout cloud provider.
 import os
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
@@ -76,11 +77,27 @@ def get_explainer():
 
 def get_model_info():
     """Dependency provider returning basic model metadata (overrideable in tests)."""
+    training_date = None
+    metrics = {}
+    try:
+        if config and config.get("training_date"):
+            training_date = config.get("training_date")
+        else:
+            model_path = MODEL_DIR / "lgbm_model.joblib"
+            if model_path.exists():
+                ts = model_path.stat().st_mtime
+                training_date = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+        if config and isinstance(config.get("metrics"), dict):
+            metrics = config.get("metrics", {})
+    except Exception:
+        training_date = None
     return {
         'model_name': config.get('model_name', 'home_credit_model') if config else 'home_credit_model',
         'model_version': API_VERSION,
         'threshold': config.get('optimal_threshold', 0.5) if config else 0.5,
-        'features': getattr(preprocessor, 'feature_names', []) if preprocessor else []
+        'features': getattr(preprocessor, 'feature_names', []) if preprocessor else [],
+        'training_date': training_date,
+        'metrics': metrics
     }
 
 
@@ -244,7 +261,7 @@ app = FastAPI(
     version=API_VERSION,
     lifespan=lifespan,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url=None
 )
 
 # Configuration CORS
@@ -300,7 +317,10 @@ async def model_info_endpoint(info: dict = Depends(get_model_info)):
     - cost_fn : Coût d'un Faux Négatif (10)
     - cost_fp : Coût d'un Faux Positif (1)
     - n_features : Nombre de features engineered (245)
-    - training_date : Date d'entraînement du modèle
+    - training_date : Date d'entraînement du modèle (ou date du fichier modèle si non renseignée)
+    - auc : AUC (si disponible)
+    - accuracy : Accuracy (si disponible)
+    - business_cost : Coût métier (si disponible)
     """
     return ModelInfo(
         model_name=info.get('model_name', 'home_credit_model'),
@@ -309,7 +329,10 @@ async def model_info_endpoint(info: dict = Depends(get_model_info)):
         cost_fn=config.get("cost_fn", 10) if config else 10,
         cost_fp=config.get("cost_fp", 1) if config else 1,
         n_features=len(info.get('features', [])),
-        training_date=info.get('training_date')
+        training_date=info.get('training_date'),
+        auc=(info.get("metrics") or {}).get("auc"),
+        accuracy=(info.get("metrics") or {}).get("accuracy"),
+        business_cost=(info.get("metrics") or {}).get("business_cost")
     )
 
 
@@ -354,7 +377,10 @@ async def predict(
     }
     ```
     
-    **Note** : L'API traite uniquement le champ `features`.
+    **Notes** :
+    - L'API traite uniquement le champ `features`.
+    - Les variables catégorielles sont envoyées en **chaînes de caractères**.
+    - Les valeurs manquantes sont imputées (médiane) et les catégories inconnues sont mappées sur **MISSING**.
     
     ## Réponse
     
@@ -455,6 +481,10 @@ async def predict_simple(
     ```json
     {"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, ...}}
     ```
+    
+    Notes:
+    - Catégorielles en chaîne
+    - Valeurs manquantes gérées via imputation
     """
     print(f"[API /predict/simple] Requête reçue avec {len(request.features)} features")
     
@@ -531,6 +561,10 @@ async def predict_batch(
         "threshold": 0.44
     }
     ```
+    
+    Notes:
+    - Catégorielles en chaîne
+    - Valeurs manquantes gérées via imputation
     
     ## Réponse
     
@@ -644,6 +678,10 @@ async def explain_prediction(
     ```json
     {"features": {"AMT_INCOME_TOTAL": 150000, "AMT_CREDIT": 500000, ...}}
     ```
+    
+    Notes:
+    - Catégorielles en chaîne
+    - Valeurs manquantes gérées via imputation
     """
     used_model = model_dep or model
     used_preprocessor = preprocessor_dep or preprocessor

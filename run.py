@@ -367,6 +367,8 @@ def run_all(args):
 
 def main():
     """Point d'entrée principal."""
+    if len(sys.argv) > 1 and sys.argv[1] in ("-all", "--all"):
+        sys.argv[1] = "all"
     parser = argparse.ArgumentParser(
         description="Home Credit Scoring - Script de lancement",
         formatter_class=argparse.RawDescriptionHelpFormatter,

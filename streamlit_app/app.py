@@ -20,6 +20,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import os
 import sys
+import json
 import urllib.request
 import urllib.error
 import re
@@ -85,6 +86,12 @@ st.markdown("""
 # Variables globales
 # ============================================
 MLFLOW_URL = os.getenv("MLFLOW_URL", "http://localhost:5000")
+GITHUB_REPO_URL = os.getenv(
+    "GITHUB_REPO_URL",
+    "https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS"
+).rstrip("/")
+if GITHUB_REPO_URL.endswith(".git"):
+    GITHUB_REPO_URL = GITHUB_REPO_URL[:-4]
 
 # Chemins pour données et rapports
 if os.path.exists("/app/data"):
@@ -95,6 +102,29 @@ else:
 DRIFT_REPORT_PATH = os.path.join(PROJECT_ROOT, "reports", "evidently_full_report.html")
 DATA_PATH = os.path.join(PROJECT_ROOT, "data", "application_train.csv")
 FEATURE_IMPORTANCE_PATH = os.path.join(PROJECT_ROOT, "reports", "feature_importance.csv")
+EXIGENCE_PATH = os.path.join(PROJECT_ROOT, "exigence.txt")
+MODEL_CONFIG_PATH = os.path.join(PROJECT_ROOT, "models", "model_config.json")
+
+
+def github_blob(path: str) -> str:
+    """Construit un lien GitHub vers un fichier du repo."""
+    clean_path = path.lstrip("/")
+    return f"{GITHUB_REPO_URL}/blob/main/{clean_path}"
+
+
+def github_tree(path: str) -> str:
+    """Construit un lien GitHub vers un dossier du repo."""
+    clean_path = path.lstrip("/")
+    return f"{GITHUB_REPO_URL}/tree/main/{clean_path}"
+
+
+def resolve_github_link(target: str) -> str:
+    """Résout un lien GitHub à partir d'un chemin interne ou d'une URL complète."""
+    if target.startswith("http://") or target.startswith("https://"):
+        return target
+    if target.startswith("dir:"):
+        return github_tree(target.replace("dir:", "", 1))
+    return github_blob(target)
 
 
 # ============================================
@@ -116,15 +146,361 @@ def load_reference_data() -> pd.DataFrame:
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_top_features_from_report(top_n: int = 15) -> List[str]:
     """Charge les features les plus importantes depuis le rapport (notebooks)."""
+    candidates = []
     if os.path.exists(FEATURE_IMPORTANCE_PATH):
+        candidates.append(FEATURE_IMPORTANCE_PATH)
+
+    # Chemin issu du run MLflow (si disponible)
+    run_id = None
+    if os.path.exists(MODEL_CONFIG_PATH):
         try:
-            df = pd.read_csv(FEATURE_IMPORTANCE_PATH)
-            if "feature" in df.columns and "importance" in df.columns:
-                df = df.sort_values("importance", ascending=False)
-                return df["feature"].head(top_n).tolist()
+            with open(MODEL_CONFIG_PATH, "r", encoding="utf-8") as f:
+                run_id = json.load(f).get("run_id")
         except Exception:
-            pass
+            run_id = None
+    if run_id:
+        candidates.append(os.path.join(
+            PROJECT_ROOT,
+            "notebooks",
+            "mlruns",
+            "446811177754564983",
+            run_id,
+            "artifacts",
+            "feature_importance.csv"
+        ))
+
+    # Chemin explicite connu (fallback)
+    candidates.append(os.path.join(
+        PROJECT_ROOT,
+        "notebooks",
+        "mlruns",
+        "446811177754564983",
+        "169b2338d7224da2801ea8dda14d64e3",
+        "artifacts",
+        "feature_importance.csv"
+    ))
+
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                df = pd.read_csv(path)
+                if "feature" in df.columns and "importance" in df.columns:
+                    df = df.sort_values("importance", ascending=False)
+                    return df["feature"].head(top_n).tolist()
+            except Exception:
+                continue
     return []
+
+
+CE_EVIDENCE = [
+    {
+        "title": "Stratégie de modélisation",
+        "items": [
+            {
+                "id": "CE1",
+                "text": "Variables catégorielles transformées (encodage).",
+                "links": [
+                    ("Notebook 02", "notebooks/02_Preprocessing_Features.ipynb"),
+                    ("Préprocessing", "src/preprocessing.py")
+                ],
+            },
+            {
+                "id": "CE2",
+                "text": "Création de nouvelles variables (feature engineering).",
+                "links": [
+                    ("Notebook 02", "notebooks/02_Preprocessing_Features.ipynb"),
+                    ("Rapport features", "reports/new_features_correlations.png")
+                ],
+            },
+            {
+                "id": "CE3",
+                "text": "Transformations mathématiques selon les distributions.",
+                "links": [
+                    ("Notebook 02", "notebooks/02_Preprocessing_Features.ipynb")
+                ],
+            },
+            {
+                "id": "CE4",
+                "text": "Normalisation lorsque nécessaire.",
+                "links": [
+                    ("Notebook 02", "notebooks/02_Preprocessing_Features.ipynb"),
+                    ("Préprocessing", "src/preprocessing.py")
+                ],
+            },
+            {
+                "id": "CE5",
+                "text": "Stratégie d’élaboration du modèle alignée au besoin métier.",
+                "links": [
+                    ("Notebook 03", "notebooks/03_Model_Training_MLflow.ipynb"),
+                    ("Support soutenance", "presentation_outline.txt")
+                ],
+            },
+            {
+                "id": "CE6",
+                "text": "Choix de la variable cible pertinente.",
+                "links": [
+                    ("Notebook 01", "notebooks/01_EDA.ipynb")
+                ],
+            },
+            {
+                "id": "CE7",
+                "text": "Vérification du data leakage.",
+                "links": [
+                    ("Notebook 01", "notebooks/01_EDA.ipynb"),
+                    ("Notebook 03", "notebooks/03_Model_Training_MLflow.ipynb")
+                ],
+            },
+            {
+                "id": "CE8",
+                "text": "Tests d’algorithmes (linéaire & non‑linéaire).",
+                "links": [
+                    ("Notebook 03", "notebooks/03_Model_Training_MLflow.ipynb")
+                ],
+            },
+        ],
+    },
+    {
+        "title": "Évaluation des performances",
+        "items": [
+            {
+                "id": "CE1",
+                "text": "Métrique adaptée + score métier (FN/FP).",
+                "links": [
+                    ("Metrics", "src/metrics.py"),
+                    ("Notebook 03", "notebooks/03_Model_Training_MLflow.ipynb"),
+                    ("Rapport métriques", "reports/metrics_report.txt")
+                ],
+            },
+            {
+                "id": "CE2",
+                "text": "Autres indicateurs (ROC, confusion, etc.).",
+                "links": [
+                    ("ROC", "reports/roc_curve.png"),
+                    ("Confusion", "reports/confusion_matrix.png"),
+                    ("Rapport métriques", "reports/metrics_report.txt")
+                ],
+            },
+            {
+                "id": "CE3",
+                "text": "Séparation train/test pour l’évaluation.",
+                "links": [
+                    ("Notebook 03", "notebooks/03_Model_Training_MLflow.ipynb"),
+                    ("Entraînement", "src/train.py")
+                ],
+            },
+            {
+                "id": "CE4",
+                "text": "Modèle de référence (Dummy).",
+                "links": [
+                    ("Notebook 03", "notebooks/03_Model_Training_MLflow.ipynb")
+                ],
+            },
+            {
+                "id": "CE5",
+                "text": "Prise en compte du déséquilibre des classes.",
+                "links": [
+                    ("Notebook 03", "notebooks/03_Model_Training_MLflow.ipynb"),
+                    ("Entraînement", "src/train.py")
+                ],
+            },
+            {
+                "id": "CE6",
+                "text": "Optimisation des hyper‑paramètres.",
+                "links": [
+                    ("Notebook 03", "notebooks/03_Model_Training_MLflow.ipynb")
+                ],
+            },
+            {
+                "id": "CE7",
+                "text": "Validation croisée (Grid/Random Search).",
+                "links": [
+                    ("Notebook 03", "notebooks/03_Model_Training_MLflow.ipynb")
+                ],
+            },
+            {
+                "id": "CE8",
+                "text": "Résultats présentés du simple au complexe + choix final.",
+                "links": [
+                    ("Notebook 03", "notebooks/03_Model_Training_MLflow.ipynb"),
+                    ("Support soutenance", "presentation_outline.txt")
+                ],
+            },
+            {
+                "id": "CE9",
+                "text": "Feature importance globale et locale.",
+                "links": [
+                    ("Importance globale", "reports/feature_importance.csv"),
+                    ("Top 30", "reports/feature_importance_top30.png"),
+                    ("Dashboard (local)", "streamlit_app/app.py")
+                ],
+            },
+        ],
+    },
+    {
+        "title": "Pipeline d’entraînement & registry",
+        "items": [
+            {
+                "id": "CE1",
+                "text": "Pipeline d’entraînement reproductible.",
+                "links": [
+                    ("Entraînement", "src/train.py"),
+                    ("Préprocessing", "src/preprocessing.py"),
+                    ("Notebook 03", "notebooks/03_Model_Training_MLflow.ipynb")
+                ],
+            },
+            {
+                "id": "CE2",
+                "text": "Sérialisation & stockage des modèles.",
+                "links": [
+                    ("Modèles", "models/model_config.json"),
+                    ("Registry MLflow", "dir:notebooks/mlruns")
+                ],
+            },
+            {
+                "id": "CE3",
+                "text": "Mesures & résultats formalisés pour comparaison.",
+                "links": [
+                    ("Rapport métriques", "reports/metrics_report.txt"),
+                    ("Registry MLflow", "dir:notebooks/mlruns")
+                ],
+            },
+        ],
+    },
+    {
+        "title": "Versioning du code",
+        "items": [
+            {
+                "id": "CE1",
+                "text": "Repo versionné Git + GitHub.",
+                "links": [
+                    ("GitHub", "https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS")
+                ],
+            },
+            {
+                "id": "CE2",
+                "text": "Historique de commits (versions distinctes).",
+                "links": [
+                    ("Commits", "https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/commits/main")
+                ],
+            },
+            {
+                "id": "CE3",
+                "text": "Packages & versions listés.",
+                "links": [
+                    ("environment.yml", "environment.yml"),
+                    ("pyproject.toml", "pyproject.toml"),
+                    ("API requirements", "api/requirements.txt")
+                ],
+            },
+            {
+                "id": "CE4",
+                "text": "Fichier introductif & structure du projet.",
+                "links": [
+                    ("README", "README.md"),
+                    ("README API", "api/README.md"),
+                    ("README Dashboard", "streamlit_app/README.md")
+                ],
+            },
+            {
+                "id": "CE5",
+                "text": "Scripts commentés pour réutilisation.",
+                "links": [
+                    ("Code source", "dir:src"),
+                    ("API", "api/main.py")
+                ],
+            },
+        ],
+    },
+    {
+        "title": "Déploiement continu de l’API",
+        "items": [
+            {
+                "id": "CE1",
+                "text": "Pipeline CI/CD défini.",
+                "links": [
+                    ("Workflow", ".github/workflows/ci-cd.yml"),
+                    ("Blueprint", "render.yaml")
+                ],
+            },
+            {
+                "id": "CE2",
+                "text": "API déployée renvoie une prédiction.",
+                "links": [
+                    ("API", "api/main.py"),
+                    ("README API", "api/README.md")
+                ],
+            },
+            {
+                "id": "CE3",
+                "text": "Déploiement Cloud automatisé.",
+                "links": [
+                    ("render.yaml", "render.yaml"),
+                    ("Guide Render", "RENDER_SETUP.md")
+                ],
+            },
+            {
+                "id": "CE4",
+                "text": "Tests unitaires automatisés.",
+                "links": [
+                    ("Tests", "dir:tests"),
+                    ("Workflow", ".github/workflows/ci-cd.yml")
+                ],
+            },
+            {
+                "id": "CE5",
+                "text": "API indépendante du dashboard.",
+                "links": [
+                    ("API", "dir:api"),
+                    ("Dashboard", "dir:streamlit_app"),
+                    ("Blueprint", "render.yaml")
+                ],
+            },
+        ],
+    },
+    {
+        "title": "Suivi de performance & drift",
+        "items": [
+            {
+                "id": "CE1",
+                "text": "Stratégie de suivi (data drift).",
+                "links": [
+                    ("Notebook 04", "notebooks/04_Drift_Evidently.ipynb")
+                ],
+            },
+            {
+                "id": "CE2",
+                "text": "Simulation + rapport Evidently.",
+                "links": [
+                    ("Rapport", "reports/evidently_full_report.html"),
+                    ("Notebook 04", "notebooks/04_Drift_Evidently.ipynb")
+                ],
+            },
+            {
+                "id": "CE3",
+                "text": "Analyse stabilité + actions proposées.",
+                "links": [
+                    ("Notebook 04", "notebooks/04_Drift_Evidently.ipynb"),
+                    ("Rapport", "reports/evidently_full_report.html")
+                ],
+            },
+        ],
+    },
+]
+
+
+def render_ce_checklist() -> None:
+    """Affiche la checklist CE avec preuves GitHub."""
+    st.markdown("### ✅ Conformité CE (preuves GitHub)")
+    with st.expander("Voir la checklist CE", expanded=False):
+        for section in CE_EVIDENCE:
+            st.markdown(f"**{section['title']}**")
+            for item in section["items"]:
+                links = []
+                for label, target in item.get("links", []):
+                    url = resolve_github_link(target)
+                    links.append(f"[{label}]({url})")
+                links_md = " • ".join(links) if links else "—"
+                st.markdown(f"- **{item['id']}** {item['text']} — {links_md}")
 
 
 def interpret_score(probability: float, threshold: float) -> dict:
@@ -429,6 +805,200 @@ def get_top_categories(df: pd.DataFrame, column: str, max_items: int = 20) -> Li
     return series.value_counts().head(max_items).index.tolist()
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def compute_numeric_ranges(df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+    """Calcule min/max et quantiles pour les sliders numériques."""
+    if df is None or df.empty:
+        return {}
+    ranges = {}
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    for col in numeric_cols:
+        series = df[col].dropna()
+        if series.empty:
+            continue
+        min_val = float(series.min())
+        max_val = float(series.max())
+        p5 = float(series.quantile(0.05))
+        p95 = float(series.quantile(0.95))
+        sample = series.head(200)
+        is_int = bool(((sample % 1) == 0).all())
+        ranges[col] = {
+            "min": min_val,
+            "max": max_val,
+            "p5": p5,
+            "p95": p95,
+            "is_int": is_int
+        }
+    return ranges
+
+
+def is_bounded_numeric(feature_name: str, range_info: Dict[str, Any]) -> bool:
+    """Détermine si une variable numérique doit être affichée en slider."""
+    if not range_info:
+        return False
+    min_val = range_info.get("min")
+    max_val = range_info.get("max")
+    if min_val is None or max_val is None:
+        return False
+    if pd.isna(min_val) or pd.isna(max_val):
+        return False
+    name = feature_name.upper()
+    # 0/1, pourcentages ou ratios
+    if 0 <= min_val and max_val <= 1:
+        return True
+    if any(tok in name for tok in ["RATIO", "RATE", "PERCENT", "SHARE"]) and 0 <= min_val and max_val <= 100:
+        return True
+    # Petites échelles discrètes
+    if range_info.get("is_int") and 0 <= min_val and max_val <= 5:
+        return True
+    return False
+
+
+def detect_multitag(values: List[str]) -> Optional[str]:
+    """Détecte un séparateur multi-tags si présent dans les valeurs."""
+    delimiters = ["|", ";", ",", " / "]
+    for d in delimiters:
+        with_delim = [v for v in values if d in v]
+        if len(with_delim) < 3:
+            continue
+        tags = []
+        for val in with_delim:
+            tags.extend(split_multitag_value(val, d))
+        unique_tags = set(tags)
+        avg_tags = len(tags) / max(len(with_delim), 1)
+        # Heuristique: plusieurs valeurs et vrai découpage en tags
+        if avg_tags >= 1.5 and len(unique_tags) >= 3:
+            return d
+    for val in values:
+        if (val.startswith("[") and val.endswith("]")) or (val.startswith("(") and val.endswith(")")):
+            return ","
+    return None
+
+
+def split_multitag_value(value: str, delimiter: str) -> List[str]:
+    """Découpe une valeur multi-tags en liste de tags."""
+    if value is None:
+        return []
+    val = str(value).strip()
+    if (val.startswith("[") and val.endswith("]")) or (val.startswith("(") and val.endswith(")")):
+        val = val[1:-1]
+    parts = [p.strip() for p in val.split(delimiter)]
+    return [p for p in parts if p]
+
+
+def render_numeric_inputs(
+    features_list: List[str],
+    ref_stats: Dict[str, Dict[str, Any]],
+    numeric_ranges: Dict[str, Dict[str, Any]],
+    key_prefix: str,
+    columns: int = 2,
+    show_raw_for_bounded: bool = False
+) -> None:
+    """Affiche des inputs numériques (slider si borné, sinon input)."""
+    if not features_list:
+        return
+    cols = st.columns(columns)
+    for idx, feat in enumerate(sorted(features_list, key=get_feature_label)):
+        default_val = ref_stats["numeric"].get(feat, 0.0)
+        if default_val is None or pd.isna(default_val):
+            default_val = 0.0
+        current_val = st.session_state.client_features.get(feat, default_val)
+        range_info = numeric_ranges.get(feat, {})
+        with cols[idx % columns]:
+            if is_bounded_numeric(feat, range_info):
+                min_val = range_info.get("min", default_val)
+                max_val = range_info.get("max", default_val)
+                if min_val == max_val:
+                    min_val, max_val = default_val - 1, default_val + 1
+                step = 1.0 if range_info.get("is_int") else 0.01
+                value = st.slider(
+                    get_feature_label(feat),
+                    min_value=float(min_val),
+                    max_value=float(max_val),
+                    value=float(current_val) if current_val is not None and not pd.isna(current_val) else float(default_val),
+                    step=step,
+                    help=get_feature_explanation(feat),
+                    key=f"{key_prefix}_slider_{feat}"
+                )
+                if show_raw_for_bounded:
+                    value = st.number_input(
+                        f"{get_feature_label(feat)} (valeur)",
+                        value=float(value),
+                        help=get_feature_explanation(feat),
+                        key=f"{key_prefix}_input_{feat}"
+                    )
+            else:
+                value = st.number_input(
+                    get_feature_label(feat),
+                    value=float(current_val) if current_val is not None and not pd.isna(current_val) else float(default_val),
+                    help=get_feature_explanation(feat),
+                    key=f"{key_prefix}_input_{feat}"
+                )
+            st.session_state.client_features[feat] = value
+
+
+def render_categorical_inputs(
+    features_list: List[str],
+    ref_data: pd.DataFrame,
+    ref_stats: Dict[str, Dict[str, Any]],
+    key_prefix: str,
+    columns: int = 2
+) -> None:
+    """Affiche des inputs catégoriels (selectbox ou multi-tags)."""
+    if not features_list:
+        return
+    cols = st.columns(columns)
+    for idx, feat in enumerate(sorted(features_list, key=get_feature_label)):
+        default_val = ref_stats["categorical"].get(feat, "MISSING")
+        if default_val is None or pd.isna(default_val):
+            default_val = "MISSING"
+        choices = get_top_categories(ref_data, feat, max_items=40)
+        default_val = str(default_val)
+        if default_val not in choices:
+            choices = [default_val] + choices
+        if "MISSING" not in choices:
+            choices.append("MISSING")
+        current_val = st.session_state.client_features.get(feat, default_val)
+        current_val = str(current_val) if current_val is not None else default_val
+        if current_val not in choices:
+            choices = [current_val] + choices
+        delimiter = detect_multitag(choices)
+        with cols[idx % columns]:
+            if delimiter:
+                with st.expander(get_feature_label(feat), expanded=False):
+                    st.caption("Sélection multiple possible")
+                    tag_set = set()
+                    for val in choices:
+                        tag_set.update(split_multitag_value(val, delimiter))
+                    tags = sorted(tag_set)
+                    col_a, col_b = st.columns(2)
+                    if col_a.button("Tout sélectionner", key=f"{key_prefix}_{feat}_select_all"):
+                        for tag in tags:
+                            st.session_state[f"{key_prefix}_{feat}_tag_{tag}"] = True
+                    if col_b.button("Tout désélectionner", key=f"{key_prefix}_{feat}_clear_all"):
+                        for tag in tags:
+                            st.session_state[f"{key_prefix}_{feat}_tag_{tag}"] = False
+                    selected = []
+                    for tag in tags:
+                        key = f"{key_prefix}_{feat}_tag_{tag}"
+                        if key not in st.session_state:
+                            st.session_state[key] = tag in split_multitag_value(current_val, delimiter)
+                        if st.checkbox(tag, key=key):
+                            selected.append(tag)
+                    if selected:
+                        st.session_state.client_features[feat] = delimiter.join(selected)
+                    else:
+                        st.session_state.client_features[feat] = "MISSING"
+            else:
+                st.session_state.client_features[feat] = st.selectbox(
+                    get_feature_label(feat),
+                    options=choices,
+                    index=choices.index(current_val),
+                    help=get_feature_explanation(feat),
+                    key=f"{key_prefix}_select_{feat}"
+                )
+
+
 def check_mlflow_health(url: str) -> bool:
     """Vérifie si l'UI MLflow est accessible."""
     if not url:
@@ -605,6 +1175,7 @@ def render_sidebar(reference_data: pd.DataFrame):
         st.header("📍 Navigation")
         nav_options = [
             ("🎯 Scoring", "scoring"),
+            ("📊 Dataset", "dataset"),
             ("📈 Data Drift", "drift"),
             ("📖 Documentation", "docs")
         ]
@@ -620,15 +1191,19 @@ def render_sidebar(reference_data: pd.DataFrame):
 
         # Documentation
         st.header("🔗 Documentation")
-        with st.expander("🔍 URLs configurées", expanded=False):
-            st.code(f"API_URL={API_URL}")
-            st.code(f"MLFLOW_URL={MLFLOW_URL}")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.link_button("Swagger", f"{API_URL}/docs", use_container_width=True)
-        with col2:
-            st.link_button("ReDoc", f"{API_URL}/redoc", use_container_width=True)
+        st.link_button("Swagger", f"{API_URL}/docs", use_container_width=True)
         st.link_button("MLflow UI", MLFLOW_URL, use_container_width=True)
+        st.link_button("README Projet", github_blob("README.md"), use_container_width=True)
+        st.link_button("Guide Render", github_blob("RENDER_SETUP.md"), use_container_width=True)
+        st.link_button("README API", github_blob("api/README.md"), use_container_width=True)
+        st.link_button("README Dashboard", github_blob("streamlit_app/README.md"), use_container_width=True)
+        st.link_button("Notebooks (dossier)", github_tree("notebooks"), use_container_width=True)
+        with st.expander("Notebooks (liens directs)", expanded=False):
+            st.link_button("01_EDA", github_blob("notebooks/01_EDA.ipynb"), use_container_width=True)
+            st.link_button("02_Preprocessing", github_blob("notebooks/02_Preprocessing_Features.ipynb"), use_container_width=True)
+            st.link_button("03_Model_Training", github_blob("notebooks/03_Model_Training_MLflow.ipynb"), use_container_width=True)
+            st.link_button("04_Drift", github_blob("notebooks/04_Drift_Evidently.ipynb"), use_container_width=True)
+        st.link_button("Repo GitHub", GITHUB_REPO_URL, use_container_width=True)
 
         st.divider()
 
@@ -647,29 +1222,12 @@ def render_sidebar(reference_data: pd.DataFrame):
         st.header("🤖 Modèle")
         model_info = get_model_info()
         if model_info:
-            st.metric("Seuil", f"{model_info.get('optimal_threshold', 0.44):.2%}")
+            st.write(f"Nom: **{model_info.get('model_name', 'N/A')}**")
+            st.write(f"Version: **{model_info.get('version', 'N/A')}**")
+            training_date = model_info.get("training_date") or "N/A"
+            st.write(f"Date modèle: **{training_date}**")
         else:
             st.caption("Infos indisponibles")
-
-        st.divider()
-
-        # Dataset
-        st.header("📊 Dataset")
-        if reference_data is not None and not reference_data.empty:
-            st.metric("Clients", f"{len(reference_data):,}")
-            if "TARGET" in reference_data.columns:
-                st.metric("Taux défaut", f"{reference_data['TARGET'].mean():.1%}")
-            with st.expander("💰 Finances"):
-                if "AMT_INCOME_TOTAL" in reference_data.columns:
-                    st.write(f"Revenu: {reference_data['AMT_INCOME_TOTAL'].median():,.0f}€")
-                if "AMT_CREDIT" in reference_data.columns:
-                    st.write(f"Crédit: {reference_data['AMT_CREDIT'].median():,.0f}€")
-            with st.expander("📊 Scores"):
-                for col in ["EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3"]:
-                    if col in reference_data.columns:
-                        st.write(f"{get_feature_label(col)}: {reference_data[col].median():.3f}")
-        else:
-            st.warning("📂 Données manquantes")
 
         st.divider()
         st.caption("v1.0.0 • Home Credit Scoring")
@@ -687,6 +1245,9 @@ def render_prediction_tab():
 
     ref_data = load_reference_data()
     ref_stats = compute_reference_stats(ref_data)
+    numeric_ranges = compute_numeric_ranges(ref_data)
+    top_from_report = load_top_features_from_report(25)
+    important_features = set(top_from_report + list(REQUIRED_FEATURES.keys()))
     
     st.markdown("### Saisie des informations client")
     
@@ -795,54 +1356,49 @@ def render_prediction_tab():
     extra_numeric = [f for f in numeric_cols if f not in exclude_cols and f not in REQUIRED_FEATURES]
     extra_categorical = [f for f in categorical_cols if f not in exclude_cols and f not in REQUIRED_FEATURES]
     if extra_numeric or extra_categorical:
-        with st.expander("➕ Variables complémentaires (optionnelles)", expanded=False):
-            st.caption("Sélectionnez des variables supplémentaires si besoin. Par défaut, seules les variables clés sont affichées.")
-            if extra_numeric:
-                selected_numeric = st.multiselect(
-                    "Variables numériques",
-                    options=sorted(extra_numeric, key=get_feature_label),
-                    format_func=get_feature_label
-                )
-                # Nettoyer les anciennes valeurs non sélectionnées
-                for key in list(st.session_state.client_features.keys()):
-                    if key in extra_numeric and key not in selected_numeric:
-                        st.session_state.client_features.pop(key, None)
-                for feat in selected_numeric:
-                    default_val = ref_stats["numeric"].get(feat, 0.0)
-                    if default_val is None or pd.isna(default_val):
-                        default_val = 0.0
-                    st.session_state.client_features[feat] = st.number_input(
-                        get_feature_label(feat),
-                        value=float(default_val),
-                        help=get_feature_explanation(feat),
-                        key=f"extra_num_{feat}"
+        important_numeric = [f for f in extra_numeric if f in important_features]
+        other_numeric = [f for f in extra_numeric if f not in important_features]
+        important_cat = [f for f in extra_categorical if f in important_features]
+        other_cat = [f for f in extra_categorical if f not in important_features]
+
+        if important_numeric:
+            st.subheader("⭐ Variables numériques importantes (supplémentaires)")
+            render_numeric_inputs(
+                important_numeric,
+                ref_stats,
+                numeric_ranges,
+                key_prefix="important_num",
+                show_raw_for_bounded=True
+            )
+
+        if important_cat:
+            st.subheader("⭐ Variables catégorielles importantes (supplémentaires)")
+            render_categorical_inputs(
+                important_cat,
+                ref_data,
+                ref_stats,
+                key_prefix="important_cat"
+            )
+
+        if other_numeric or other_cat:
+            with st.expander("➕ Variables avancées (moins importantes)", expanded=False):
+                st.caption("Toutes les variables avancées sont affichées pour modification directe.")
+                if other_numeric:
+                    st.markdown("**Variables numériques avancées**")
+                    render_numeric_inputs(
+                        other_numeric,
+                        ref_stats,
+                        numeric_ranges,
+                        key_prefix="other_num"
                     )
 
-            if extra_categorical:
-                selected_cat = st.multiselect(
-                    "Variables catégorielles",
-                    options=sorted(extra_categorical, key=get_feature_label),
-                    format_func=get_feature_label
-                )
-                for key in list(st.session_state.client_features.keys()):
-                    if key in extra_categorical and key not in selected_cat:
-                        st.session_state.client_features.pop(key, None)
-                for feat in selected_cat:
-                    default_val = ref_stats["categorical"].get(feat, "MISSING")
-                    if default_val is None or pd.isna(default_val):
-                        default_val = "MISSING"
-                    choices = get_top_categories(ref_data, feat, max_items=20)
-                    if default_val not in choices:
-                        choices = [str(default_val)] + choices
-                    if "MISSING" not in choices:
-                        choices.append("MISSING")
-                    default_val = str(default_val)
-                    st.session_state.client_features[feat] = st.selectbox(
-                        get_feature_label(feat),
-                        options=choices,
-                        index=choices.index(default_val),
-                        help=get_feature_explanation(feat),
-                        key=f"extra_cat_{feat}"
+                if other_cat:
+                    st.markdown("**Variables catégorielles avancées**")
+                    render_categorical_inputs(
+                        other_cat,
+                        ref_data,
+                        ref_stats,
+                        key_prefix="other_cat"
                     )
     
     # Calculer les ratios automatiquement
@@ -974,6 +1530,7 @@ def render_comparison_section(
             priority_features.append(feat)
     other_features = [f for f in available_features if f not in priority_features]
     available_features = priority_features + sorted(other_features, key=get_feature_label)
+    default_feature = priority_features[0] if priority_features else (available_features[0] if available_features else None)
 
     tab1, tab2, tab3 = st.tabs([
         "🎯 Vue Radar",
@@ -1016,7 +1573,8 @@ def render_comparison_section(
             "Sélectionnez une caractéristique",
             available_features,
             help="Voir la distribution et la position du client",
-            format_func=get_feature_label
+            format_func=get_feature_label,
+            index=available_features.index(default_feature) if default_feature in available_features else 0
         )
 
         st.info(f"**{get_feature_label(selected_feature)}**: {get_feature_explanation(selected_feature)}")
@@ -1054,26 +1612,25 @@ def render_comparison_section(
                 if series.empty:
                     st.info("Aucune donnée disponible pour cette caractéristique.")
                 else:
-                    counts = series.value_counts()
-                    top = counts.head(10)
-                    other = counts.iloc[10:].sum()
-                    labels = list(top.index)
-                    values = list(top.values)
-                    if other > 0:
-                        labels.append("Autres")
-                        values.append(other)
-                    client_str = str(client_value)
-                    colors = ["#C41E3A" if label == client_str else "#4169E1" for label in labels]
-                    fig = go.Figure(go.Bar(x=labels, y=values, marker_color=colors))
-                    fig.update_layout(
-                        title=f"Répartition de {get_feature_label(selected_feature)}",
-                        xaxis_title="Catégorie",
-                        yaxis_title="Nombre de clients",
-                        height=400
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                    client_pct = (series == client_str).mean() * 100
-                    st.info(f"Valeur client: **{client_str}** • Fréquence: **{client_pct:.1f}%**")
+                    unique_count = series.nunique()
+                    if unique_count > 15:
+                        st.info("Trop de catégories pour un graphique lisible.")
+                    else:
+                        counts = series.value_counts()
+                        labels = list(counts.index)
+                        values = list(counts.values)
+                        client_str = str(client_value)
+                        colors = ["#C41E3A" if label == client_str else "#4169E1" for label in labels]
+                        fig = go.Figure(go.Bar(x=labels, y=values, marker_color=colors))
+                        fig.update_layout(
+                            title=f"Répartition de {get_feature_label(selected_feature)}",
+                            xaxis_title="Catégorie",
+                            yaxis_title="Nombre de clients",
+                            height=400
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                        client_pct = (series == client_str).mean() * 100
+                        st.info(f"Valeur client: **{client_str}** • Fréquence: **{client_pct:.1f}%**")
 
     with tab3:
         st.subheader("📋 Statistiques complètes du client")
@@ -1156,7 +1713,10 @@ def render_drift_tab():
             st.error(f"Erreur lors du chargement du rapport: {e}")
     else:
         st.warning("📋 Rapport Evidently non disponible.")
-        st.info("Le rapport est généré par le notebook `notebooks/04_Drift_Evidently.ipynb`.")
+        st.info(
+            "Le rapport est généré par le notebook "
+            f"[04_Drift_Evidently.ipynb]({github_blob('notebooks/04_Drift_Evidently.ipynb')})."
+        )
 
 
 def render_documentation_tab():
@@ -1176,6 +1736,9 @@ def render_documentation_tab():
     Comparez le profil du client avec l'ensemble de la population:
     - Visualisation de la distribution
     - Position du client (percentile)
+
+    ### 📊 Onglet Dataset
+    Présente les statistiques clés du jeu de données (taille, taux de défaut, revenus, crédits, scores externes).
     
     ### 📈 Onglet Data Drift
     Rapport Evidently analysant la stabilité des données.
@@ -1203,10 +1766,129 @@ def render_documentation_tab():
     Le modèle minimise: `10 × FN + 1 × FP`
     """)
 
-    st.markdown("### Liens utiles")
-    st.markdown(f"- API Swagger: {API_URL}/docs")
-    st.markdown(f"- API ReDoc: {API_URL}/redoc")
-    st.markdown(f"- MLflow UI: {MLFLOW_URL}")
+
+def render_dataset_tab():
+    """Onglet analyse du dataset."""
+    st.header("📊 Analyse du jeu de données")
+
+    ref_data = load_reference_data()
+    if ref_data.empty:
+        st.warning("⚠️ Données de référence non disponibles.")
+        return
+
+    model_info = get_model_info()
+    if model_info:
+        st.markdown("### 🤖 Infos modèle")
+        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1.metric("Nom", model_info.get("model_name", "N/A"))
+        col_m2.metric("Version", model_info.get("version", "N/A"))
+        col_m3.metric("Date", model_info.get("training_date") or "N/A")
+        col_m4, col_m5, col_m6 = st.columns(3)
+        col_m4.metric("AUC", f"{model_info.get('auc', 0):.3f}" if model_info.get("auc") is not None else "N/A")
+        col_m5.metric("Accuracy", f"{model_info.get('accuracy', 0):.3f}" if model_info.get("accuracy") is not None else "N/A")
+        col_m6.metric("Coût métier", f"{model_info.get('business_cost', 0):,.0f}" if model_info.get("business_cost") is not None else "N/A")
+
+    st.markdown("### Vue d'ensemble")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Clients", f"{len(ref_data):,}")
+    with col2:
+        if "TARGET" in ref_data.columns:
+            st.metric("Taux défaut", f"{ref_data['TARGET'].mean():.1%}")
+        else:
+            st.metric("Taux défaut", "N/A")
+    with col3:
+        st.metric("Colonnes", f"{ref_data.shape[1]:,}")
+
+    st.markdown("### Structure & qualité")
+    numeric_cols = ref_data.select_dtypes(include=[np.number]).columns.tolist()
+    categorical_cols = [c for c in ref_data.columns if c not in numeric_cols]
+    total_cells = ref_data.shape[0] * ref_data.shape[1]
+    missing_cells = int(ref_data.isna().sum().sum())
+    missing_pct = (missing_cells / total_cells * 100) if total_cells else 0
+    col_q1, col_q2, col_q3 = st.columns(3)
+    col_q1.metric("Variables numériques", f"{len(numeric_cols):,}")
+    col_q2.metric("Variables catégorielles", f"{len(categorical_cols):,}")
+    col_q3.metric("Valeurs manquantes", f"{missing_pct:.1f}%")
+
+    if "TARGET" in ref_data.columns:
+        st.markdown("### Cible (TARGET)")
+        target_counts = ref_data["TARGET"].value_counts().sort_index()
+        fig_target = go.Figure(
+            data=[
+                go.Bar(
+                    x=["Non défaut (0)", "Défaut (1)"],
+                    y=[target_counts.get(0, 0), target_counts.get(1, 0)],
+                    marker_color=["#4169E1", "#C41E3A"]
+                )
+            ]
+        )
+        fig_target.update_layout(
+            height=300,
+            yaxis_title="Nombre de clients",
+            showlegend=False
+        )
+        st.plotly_chart(fig_target, use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("### 💰 Finances")
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
+        if "AMT_INCOME_TOTAL" in ref_data.columns:
+            st.metric("Revenu médian", f"{ref_data['AMT_INCOME_TOTAL'].median():,.0f}€")
+        else:
+            st.metric("Revenu médian", "N/A")
+    with col_f2:
+        if "AMT_CREDIT" in ref_data.columns:
+            st.metric("Crédit médian", f"{ref_data['AMT_CREDIT'].median():,.0f}€")
+        else:
+            st.metric("Crédit médian", "N/A")
+    with col_f3:
+        if "AMT_ANNUITY" in ref_data.columns:
+            st.metric("Annuité médiane", f"{ref_data['AMT_ANNUITY'].median():,.0f}€")
+        else:
+            st.metric("Annuité médiane", "N/A")
+
+    st.markdown("---")
+    st.markdown("### 📊 Scores externes")
+    col_s1, col_s2, col_s3 = st.columns(3)
+    if "EXT_SOURCE_1" in ref_data.columns:
+        col_s1.metric("Score externe 1", f"{ref_data['EXT_SOURCE_1'].median():.3f}")
+    else:
+        col_s1.metric("Score externe 1", "N/A")
+    if "EXT_SOURCE_2" in ref_data.columns:
+        col_s2.metric("Score externe 2", f"{ref_data['EXT_SOURCE_2'].median():.3f}")
+    else:
+        col_s2.metric("Score externe 2", "N/A")
+    if "EXT_SOURCE_3" in ref_data.columns:
+        col_s3.metric("Score externe 3", f"{ref_data['EXT_SOURCE_3'].median():.3f}")
+    else:
+        col_s3.metric("Score externe 3", "N/A")
+
+    st.markdown("---")
+    st.markdown("### 📌 Variables importantes")
+    top_features = load_top_features_from_report(15)
+    if top_features:
+        display_labels = [get_feature_label(f) for f in top_features]
+        st.write(", ".join(display_labels))
+    else:
+        st.caption("Aucune importance de feature disponible.")
+
+    st.markdown("---")
+    render_ce_checklist()
+
+    st.markdown("---")
+    st.markdown("### ✅ Exigences (exigence.txt)")
+    if os.path.exists(EXIGENCE_PATH):
+        with st.expander("Voir toutes les exigences", expanded=False):
+            try:
+                with open(EXIGENCE_PATH, "r", encoding="utf-8") as f:
+                    content = f.read()
+                st.text(content)
+            except Exception as e:
+                st.error(f"Erreur de lecture: {e}")
+    else:
+        st.caption("Fichier exigence.txt non trouvé.")
 
 
 # ============================================
@@ -1230,6 +1912,8 @@ def main():
 
     if current_page == "scoring":
         render_prediction_tab()
+    elif current_page == "dataset":
+        render_dataset_tab()
     elif current_page == "drift":
         render_drift_tab()
     elif current_page == "docs":

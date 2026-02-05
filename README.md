@@ -27,6 +27,60 @@ Prédire la **probabilité de défaut de paiement** d'un client demandant un cr�
 | [presentation_outline.txt](presentation_outline.txt) | Plan de présentation - Phase 1 (MLOps) |
 | [presentation_outline_phase2.txt](presentation_outline_phase2.txt) | Plan de présentation - Phase 2 (Dashboard + Veille) |
 
+### 📓 Notebooks (GitHub)
+
+- [01_EDA.ipynb](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/01_EDA.ipynb)
+- [02_Preprocessing_Features.ipynb](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/02_Preprocessing_Features.ipynb)
+- [03_Model_Training_MLflow.ipynb](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/03_Model_Training_MLflow.ipynb)
+- [04_Drift_Evidently.ipynb](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/04_Drift_Evidently.ipynb)
+
+## ✅ Conformité CE (preuves dans le repo)
+
+### 1) Stratégie de modélisation
+- **CE1** Encodage des variables catégorielles : [Notebook 02](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/02_Preprocessing_Features.ipynb) · [src/preprocessing.py](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/src/preprocessing.py)
+- **CE2** Feature engineering : [Notebook 02](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/02_Preprocessing_Features.ipynb) · [reports/new_features_correlations.png](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/reports/new_features_correlations.png)
+- **CE3** Transformations mathématiques : [Notebook 02](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/02_Preprocessing_Features.ipynb)
+- **CE4** Normalisation : [Notebook 02](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/02_Preprocessing_Features.ipynb) · [src/preprocessing.py](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/src/preprocessing.py)
+- **CE5** Stratégie alignée au besoin métier : [Notebook 03](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/03_Model_Training_MLflow.ipynb) · [presentation_outline.txt](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/presentation_outline.txt)
+- **CE6** Variable cible pertinente : [Notebook 01](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/01_EDA.ipynb)
+- **CE7** Vérification data leakage : [Notebook 01](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/01_EDA.ipynb) · [Notebook 03](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/03_Model_Training_MLflow.ipynb)
+- **CE8** Tests d’algorithmes (linéaire & non‑linéaire) : [Notebook 03](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/03_Model_Training_MLflow.ipynb)
+
+### 2) Évaluation des performances
+- **CE1** Score métier FN/FP + métriques : [src/metrics.py](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/src/metrics.py) · [Notebook 03](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/03_Model_Training_MLflow.ipynb) · [reports/metrics_report.txt](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/reports/metrics_report.txt)
+- **CE2** Indicateurs complémentaires : [ROC](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/reports/roc_curve.png) · [Confusion](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/reports/confusion_matrix.png)
+- **CE3** Split train/test : [Notebook 03](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/03_Model_Training_MLflow.ipynb) · [src/train.py](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/src/train.py)
+- **CE4** Modèle de référence : [Notebook 03](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/03_Model_Training_MLflow.ipynb)
+- **CE5** Déséquilibre des classes : [Notebook 03](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/03_Model_Training_MLflow.ipynb) · [src/train.py](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/src/train.py)
+- **CE6** Optimisation hyper‑paramètres : [Notebook 03](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/03_Model_Training_MLflow.ipynb)
+- **CE7** Validation croisée : [Notebook 03](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/03_Model_Training_MLflow.ipynb)
+- **CE8** Résultats du simple au complexe + choix final : [Notebook 03](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/03_Model_Training_MLflow.ipynb) · [presentation_outline.txt](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/presentation_outline.txt)
+- **CE9** Feature importance globale & locale : [reports/feature_importance.csv](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/reports/feature_importance.csv) · [streamlit_app/app.py](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/streamlit_app/app.py)
+
+### 3) Pipeline d’entraînement & registry
+- **CE1** Pipeline reproductible : [src/train.py](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/src/train.py) · [src/preprocessing.py](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/src/preprocessing.py)
+- **CE2** Sérialisation + stockage modèles : [models/model_config.json](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/models/model_config.json) · [notebooks/mlruns](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/tree/main/notebooks/mlruns)
+- **CE3** Mesures formalisées : [reports/metrics_report.txt](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/reports/metrics_report.txt) · [notebooks/mlruns](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/tree/main/notebooks/mlruns)
+
+### 4) Versioning du code
+- **CE1** Repo Git + GitHub : [repo](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS)
+- **CE2** Historique des commits : [commits](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/commits/main)
+- **CE3** Packages & versions : [environment.yml](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/environment.yml) · [pyproject.toml](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/pyproject.toml) · [api/requirements.txt](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/api/requirements.txt)
+- **CE4** Fichier introductif & structure : [README.md](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/README.md) · [api/README.md](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/api/README.md) · [streamlit_app/README.md](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/streamlit_app/README.md)
+- **CE5** Scripts commentés : [src/](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/tree/main/src) · [api/main.py](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/api/main.py)
+
+### 5) Déploiement continu de l’API
+- **CE1** Pipeline CI/CD : [.github/workflows/ci-cd.yml](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/.github/workflows/ci-cd.yml) · [render.yaml](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/render.yaml)
+- **CE2** API de prédiction opérationnelle : [api/main.py](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/api/main.py) · [api/README.md](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/api/README.md)
+- **CE3** Déploiement cloud : [render.yaml](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/render.yaml) · [RENDER_SETUP.md](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/RENDER_SETUP.md)
+- **CE4** Tests unitaires automatisés : [tests/](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/tree/main/tests) · [.github/workflows/ci-cd.yml](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/.github/workflows/ci-cd.yml)
+- **CE5** API indépendante du dashboard : [api/](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/tree/main/api) · [streamlit_app/](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/tree/main/streamlit_app)
+
+### 6) Suivi de performance & drift
+- **CE1** Stratégie de suivi (data drift) : [Notebook 04](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/04_Drift_Evidently.ipynb)
+- **CE2** Simulation + rapport Evidently : [reports/evidently_full_report.html](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/reports/evidently_full_report.html) · [Notebook 04](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/04_Drift_Evidently.ipynb)
+- **CE3** Analyse stabilité + actions : [Notebook 04](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/notebooks/04_Drift_Evidently.ipynb) · [reports/evidently_full_report.html](https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS/blob/main/reports/evidently_full_report.html)
+
 ## 🏗️ Architecture du projet
 
 ```
@@ -67,7 +121,7 @@ home-credit-scoring/
 
 ### Entraînement et tracking
 
-- Le notebook `03_Model_Training_MLflow.ipynb` logge les runs MLflow dans `notebooks/mlruns/`
+- Le notebook `03_Model_Training_MLflow.ipynb` (lien GitHub ci-dessus) logge les runs MLflow dans `notebooks/mlruns/`
 - Les modèles exportés sont versionnés dans `models/` et utilisés par l’API pour l’inférence
 
 ### Lancement local
@@ -107,7 +161,7 @@ Le projet fournit **3 Dockerfiles** (API, Dashboard, MLflow). Chaque image est p
 #### 3. MLflow (mlflow/Dockerfile)
 - **Port** : 5000
 - **Contenu** :
-  - MLflow UI avec runs copiés depuis `notebooks/mlruns/`
+- MLflow UI avec runs copiés depuis `notebooks/mlruns/` (voir dossier sur GitHub)
   - Registry MLflow disponible (lecture seule en production)
 
 > 📝 **Notes** :
@@ -324,7 +378,7 @@ Si vous renommez les services, adaptez ces variables dans `render.yaml`.
 
 La documentation interactive est disponible via :
 - **Swagger UI** : `http://localhost:8000/docs` - Tests des endpoints directement
-- **ReDoc** : `http://localhost:8000/redoc` - Documentation complète
+- **Swagger** : `http://localhost:8000/docs` - Documentation interactive
 
 ### Exemple de payload (17 features minimal)
 

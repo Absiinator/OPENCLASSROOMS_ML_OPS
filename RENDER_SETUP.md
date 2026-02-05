@@ -71,9 +71,11 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
 | **Dashboard** | `PORT`       | Automatique (Render)                              |
 | **Dashboard** | `API_URL`    | `https://home-credit-scoring-api.onrender.com`    |
 | **Dashboard** | `MLFLOW_URL` | `https://home-credit-scoring-mlflow.onrender.com` |
+| **Dashboard** | `GITHUB_REPO_URL` | `https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS` |
 | **MLflow**    | `PORT`       | Automatique (Render)                              |
 
-> 💡 Ces variables sont définies dans `render.yaml` et écrasent les valeurs par défaut des Dockerfiles.
+> 💡 `API_URL`, `MLFLOW_URL` et `PORT` sont définies dans `render.yaml` et écrasent les valeurs par défaut.  
+> `GITHUB_REPO_URL` est **optionnelle** : ajoutez-la si vous souhaitez afficher un autre repo que le défaut.
 
 ---
 
@@ -83,9 +85,16 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
 2. Render lit `render.yaml` et crée **3 services** en plan gratuit
 3. Vérifier que les variables `API_URL` et `MLFLOW_URL` correspondent aux **Live URLs** Render
 
+### Lien du repo (où le renseigner ?)
+
+- **Si vous utilisez le Blueprint** : vous liez le **repo une seule fois** au moment de créer le Blueprint.  
+  Les 3 services héritent automatiquement du même repo.
+- **Si vous créez les services manuellement** : vous devez lier **le même repo** à **chaque service** (API, Dashboard, MLflow).
+
 ### Variables d’environnement à vérifier
 
 - **Dashboard** : `API_URL`, `MLFLOW_URL` (doivent viser les URLs Render)
+- **Dashboard** : `GITHUB_REPO_URL` (optionnelle, pour afficher le lien GitHub dans l’interface)
 - **API / MLflow** : `PORT` est déjà défini dans `render.yaml`
 
 ### Notes plan gratuit
@@ -129,6 +138,7 @@ https://home-credit-api.onrender.com/docs
 | **Dashboard** | `PORT`       | Défini automatiquement par Render    | ❌ Non                           |
 | **Dashboard** | `API_URL`    | `https://votre-api.onrender.com`    | ✅**OUI**                  |
 | **Dashboard** | `MLFLOW_URL` | `https://votre-mlflow.onrender.com` | ✅**OUI**                  |
+| **Dashboard** | `GITHUB_REPO_URL` | `https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS` | ❌ Non |
 | **MLflow**    | `PORT`       | Défini automatiquement par Render    | ❌ Non                           |
 
 ## 📝 Notes Importantes

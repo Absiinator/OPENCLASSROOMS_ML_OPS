@@ -34,10 +34,18 @@ class PredictionRequest(BaseModel):
       "features": { ... }
     }
     Compatibilité: "data" est accepté comme alias.
+
+    Notes:
+    - Les clés doivent correspondre aux noms de colonnes d'origine (dataset).
+    - Les variables catégorielles sont envoyées en chaîne de caractères.
+    - Les valeurs manquantes ou catégories inconnues sont gérées (imputation / MISSING).
     """
     features: Dict[str, Any] = Field(
         ...,
-        description="Features du client (format unique attendu)",
+        description=(
+            "Features du client (noms de colonnes d'origine). "
+            "Valeurs numériques et catégorielles acceptées."
+        ),
         validation_alias=AliasChoices("features", "data")
     )
 
@@ -64,6 +72,20 @@ class PredictionRequest(BaseModel):
                         "CREDIT_INCOME_RATIO": 3.33,
                         "ANNUITY_INCOME_RATIO": 0.17,
                         "EXT_SOURCE_MEAN": 0.55
+                    }
+                },
+                {
+                    "features": {
+                        "NAME_CONTRACT_TYPE": "Cash loans",
+                        "CODE_GENDER": "F",
+                        "NAME_INCOME_TYPE": "Working",
+                        "NAME_EDUCATION_TYPE": "Higher education",
+                        "NAME_FAMILY_STATUS": "Married",
+                        "NAME_HOUSING_TYPE": "House / apartment",
+                        "AMT_INCOME_TOTAL": 135000.0,
+                        "AMT_CREDIT": 568800.0,
+                        "DAYS_BIRTH": -19241,
+                        "EXT_SOURCE_2": 0.7897
                     }
                 }
             ]
@@ -224,6 +246,26 @@ class ModelInfo(BaseModel):
     cost_fp: int = Field(..., description="Coût FP")
     n_features: int = Field(..., description="Nombre de features")
     training_date: Optional[str] = Field(None, description="Date d'entraînement")
+    auc: Optional[float] = Field(None, description="AUC du modèle")
+    accuracy: Optional[float] = Field(None, description="Accuracy du modèle")
+    business_cost: Optional[float] = Field(None, description="Coût métier (si disponible)")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "model_name": "home_credit_model",
+                "version": "1.0.0",
+                "optimal_threshold": 0.44,
+                "cost_fn": 10,
+                "cost_fp": 1,
+                "n_features": 245,
+                "training_date": "2026-02-04",
+                "auc": 0.768,
+                "accuracy": 0.705,
+                "business_cost": 9413
+            }
+        }
+    )
 
 
 class HealthResponse(BaseModel):
