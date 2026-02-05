@@ -15,6 +15,10 @@ on:
 
 env:
   PYTHON_VERSION: "3.10"
+  GHCR_OWNER: "absiinator"
+  RENDER_DEPLOY_HOOK_API: ${{ vars.RENDER_DEPLOY_HOOK_API || secrets.RENDER_DEPLOY_HOOK_API }}
+  RENDER_DEPLOY_HOOK_DASHBOARD: ${{ vars.RENDER_DEPLOY_HOOK_DASHBOARD || secrets.RENDER_DEPLOY_HOOK_DASHBOARD }}
+  RENDER_DEPLOY_HOOK_MLFLOW: ${{ vars.RENDER_DEPLOY_HOOK_MLFLOW || secrets.RENDER_DEPLOY_HOOK_MLFLOW }}
 
 jobs:
   # ============================================
@@ -135,7 +139,7 @@ jobs:
         id: meta-api
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/openclassrooms-ml-ops-api
+          images: ghcr.io/${{ env.GHCR_OWNER }}/openclassrooms-ml-ops-api
           tags: |
             type=ref,event=branch
             type=sha,prefix=
@@ -158,7 +162,7 @@ jobs:
         id: meta-dashboard
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/openclassrooms-ml-ops-dashboard
+          images: ghcr.io/${{ env.GHCR_OWNER }}/openclassrooms-ml-ops-dashboard
           tags: |
             type=ref,event=branch
             type=sha,prefix=
@@ -181,7 +185,7 @@ jobs:
         id: meta-mlflow
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/openclassrooms-ml-ops-mlflow
+          images: ghcr.io/${{ env.GHCR_OWNER }}/openclassrooms-ml-ops-mlflow
           tags: |
             type=ref,event=branch
             type=sha,prefix=
@@ -198,6 +202,26 @@ jobs:
           cache-from: type=gha,scope=mlflow
           cache-to: type=gha,mode=max,scope=mlflow
           platforms: linux/amd64
+
+      # ===== Trigger Render Deploy Hooks (optionnel) =====
+      - name: 🚀 Trigger Render Deploy Hooks
+        if: env.RENDER_DEPLOY_HOOK_API != '' || env.RENDER_DEPLOY_HOOK_DASHBOARD != '' || env.RENDER_DEPLOY_HOOK_MLFLOW != ''
+        run: |
+          set -e
+          trigger() {
+            name="$1"
+            url="$2"
+            if [ -n "$url" ]; then
+              echo "▶️ Déploiement Render: $name"
+              curl -sS -X POST "$url" -o /dev/null
+              echo "✅ Hook $name déclenché"
+            else
+              echo "⏭️ Hook $name non configuré"
+            fi
+          }
+          trigger "API" "$RENDER_DEPLOY_HOOK_API"
+          trigger "Dashboard" "$RENDER_DEPLOY_HOOK_DASHBOARD"
+          trigger "MLflow" "$RENDER_DEPLOY_HOOK_MLFLOW"
 
   # ============================================
   # Job 4: Résumé du déploiement
@@ -217,9 +241,9 @@ jobs:
           echo ""
           if [ "${{ needs.build-and-push.result }}" = "success" ]; then
             echo "✅ Images Docker construites et publiées sur GHCR:"
-            echo "- ghcr.io/${{ github.repository_owner }}/openclassrooms-ml-ops-api:latest"
-            echo "- ghcr.io/${{ github.repository_owner }}/openclassrooms-ml-ops-dashboard:latest"
-            echo "- ghcr.io/${{ github.repository_owner }}/openclassrooms-ml-ops-mlflow:latest"
+            echo "- ghcr.io/${{ env.GHCR_OWNER }}/openclassrooms-ml-ops-api:latest"
+            echo "- ghcr.io/${{ env.GHCR_OWNER }}/openclassrooms-ml-ops-dashboard:latest"
+            echo "- ghcr.io/${{ env.GHCR_OWNER }}/openclassrooms-ml-ops-mlflow:latest"
             echo ""
             echo "🚀 Pour déployer sur Render:"
             echo "   1. Allez sur dashboard.render.com"

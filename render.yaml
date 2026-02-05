@@ -14,13 +14,13 @@
 
 services:
   # =========================================
-  # 1. API FastAPI - Scoring Credit
+  # 1. API FastAPI - Scoring Credit (GHCR)
   # =========================================
   - type: web
     name: home-scoring-api
-    runtime: docker
-    dockerfilePath: ./api/Dockerfile
-    dockerContext: .
+    runtime: image
+    image:
+      url: ghcr.io/absiinator/openclassrooms-ml-ops-api:latest
     plan: free
     region: frankfurt
     healthCheckPath: /health
@@ -32,13 +32,13 @@ services:
         value: /app
 
   # =========================================
-  # 2. Dashboard Streamlit
+  # 2. Dashboard Streamlit (GHCR)
   # =========================================
   - type: web
     name: home-scoring-dashboard
-    runtime: docker
-    dockerfilePath: ./streamlit_app/Dockerfile
-    dockerContext: .
+    runtime: image
+    image:
+      url: ghcr.io/absiinator/openclassrooms-ml-ops-dashboard:latest
     plan: free
     region: frankfurt
     healthCheckPath: /_stcore/health
@@ -53,13 +53,13 @@ services:
         value: "https://home-scoring-mlflow.onrender.com"
 
   # =========================================
-  # 3. MLflow UI - Tracking des expériences
+  # 3. MLflow UI - Tracking des expériences (GHCR)
   # =========================================
   - type: web
     name: home-scoring-mlflow
-    runtime: docker
-    dockerfilePath: ./mlflow/Dockerfile
-    dockerContext: .
+    runtime: image
+    image:
+      url: ghcr.io/absiinator/openclassrooms-ml-ops-mlflow:latest
     plan: free
     region: frankfurt
     healthCheckPath: /

@@ -12,6 +12,16 @@ Ce guide explique le déploiement des 3 services sur Render.
 - Lint + tests + build d’images Docker
 - Push vers GHCR si vous souhaitez un registry externe
 
+## 🐳 Images GHCR (CI/CD)
+
+Si vous déployez **depuis GHCR**, le workflow publie automatiquement **ces images** :
+
+- **API** : `ghcr.io/absiinator/openclassrooms-ml-ops-api:latest`
+- **Dashboard** : `ghcr.io/absiinator/openclassrooms-ml-ops-dashboard:latest`
+- **MLflow** : `ghcr.io/absiinator/openclassrooms-ml-ops-mlflow:latest`
+
+Ces noms **doivent correspondre** à ceux configurés dans Render si vous utilisez le mode “Docker Image”.
+
 ## 📋 Prérequis
 
 1. **Compte Render** : Créez un compte gratuit sur [render.com](https://render.com)
@@ -90,6 +100,13 @@ Le projet utilise 3 Dockerfiles distincts pour les 3 services :
 - **Si vous utilisez le Blueprint** : vous liez le **repo une seule fois** au moment de créer le Blueprint.  
   Les 3 services héritent automatiquement du même repo.
 - **Si vous créez les services manuellement** : vous devez lier **le même repo** à **chaque service** (API, Dashboard, MLflow).
+
+### Déploiement via GHCR (alternative)
+
+Si vous préférez **déployer depuis GHCR** :
+1. Créez 3 services Render de type **Docker Image**
+2. Renseignez les images (voir section GHCR ci‑dessus)
+3. Activez **Auto Deploy** pour tirer la dernière image
 
 ### Variables d’environnement à vérifier
 

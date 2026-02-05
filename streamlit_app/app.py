@@ -87,6 +87,8 @@ st.markdown("""
 # Variables globales
 # ============================================
 MLFLOW_URL = os.getenv("MLFLOW_URL", "http://localhost:5000")
+API_WAKEUP_URL = os.getenv("API_WAKEUP_URL", f"{API_URL}/health")
+MLFLOW_WAKEUP_URL = os.getenv("MLFLOW_WAKEUP_URL", MLFLOW_URL)
 GITHUB_REPO_URL = os.getenv(
     "GITHUB_REPO_URL",
     "https://github.com/Absiinator/OPENCLASSROOMS_ML_OPS"
@@ -1314,6 +1316,22 @@ def check_mlflow_health(url: str) -> bool:
         return False
 
 
+def warm_up_services() -> None:
+    """Réveille l'API et MLflow une seule fois par session."""
+    if st.session_state.get("services_warmed_up"):
+        return
+    st.session_state.services_warmed_up = True
+
+    for url in (API_WAKEUP_URL, MLFLOW_WAKEUP_URL):
+        if not url:
+            continue
+        try:
+            with urllib.request.urlopen(url, timeout=5):
+                pass
+        except Exception:
+            pass
+
+
 def create_gauge_chart(probability: float, threshold: float) -> go.Figure:
     """Crée une jauge visuelle du score de risque."""
     color = get_risk_color(probability)
@@ -2215,6 +2233,7 @@ def main():
     """Fonction principale de l'application."""
     setup_debug_shortcut()
     st.session_state.debug_mode = get_debug_mode()
+    warm_up_services()
     st.title("🏦 Home Credit - Outil de Scoring")
     st.markdown("""
     **Outil d'aide à la décision pour l'octroi de crédit**
