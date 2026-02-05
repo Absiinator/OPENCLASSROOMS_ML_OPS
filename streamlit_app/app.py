@@ -133,6 +133,46 @@ def resolve_github_link(target: str) -> str:
     return github_blob(target)
 
 
+def get_debug_mode() -> bool:
+    """Détermine si le mode debug est actif via l'URL (?debug=1)."""
+    try:
+        params = st.query_params
+        raw = params.get("debug", "0")
+    except Exception:
+        params = st.experimental_get_query_params()
+        raw = params.get("debug", ["0"])
+    if isinstance(raw, list):
+        raw = raw[0] if raw else "0"
+    return str(raw).lower() in {"1", "true", "yes", "on"}
+
+
+def setup_debug_shortcut() -> None:
+    """Ajoute un raccourci clavier (Cmd/Ctrl+Shift+D) pour le mode debug."""
+    st.components.v1.html(
+        """
+        <script>
+        (function() {
+            if (window.__debugShortcutInstalled) { return; }
+            window.__debugShortcutInstalled = true;
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            document.addEventListener('keydown', function(e) {
+                const modifier = isMac ? e.metaKey : e.ctrlKey;
+                if (modifier && e.shiftKey && e.key.toLowerCase() === 'd') {
+                    e.preventDefault();
+                    const url = new URL(window.location.href);
+                    const current = url.searchParams.get('debug') === '1';
+                    url.searchParams.set('debug', current ? '0' : '1');
+                    window.location.href = url.toString();
+                }
+            }, true);
+        })();
+        </script>
+        """,
+        height=0,
+        width=0
+    )
+
+
 def get_feature_importance_candidates() -> List[str]:
     """Liste des chemins possibles pour feature_importance.csv."""
     candidates = []
@@ -707,6 +747,23 @@ def safe_int(value: Any, default: int) -> int:
         return int(default)
 
 
+def is_boolean_numeric(feature_name: str, range_info: Dict[str, Any]) -> bool:
+    """Détermine si une variable numérique doit être affichée en checkbox."""
+    name = feature_name.upper()
+    if name.startswith("FLAG_"):
+        return True
+    if range_info:
+        min_val = range_info.get("min")
+        max_val = range_info.get("max")
+        is_int = bool(range_info.get("is_int"))
+        if is_int and min_val is not None and max_val is not None:
+            try:
+                return float(min_val) >= 0 and float(max_val) <= 1
+            except Exception:
+                return False
+    return False
+
+
 def load_local_model_info() -> Optional[Dict[str, Any]]:
     """Fallback local des infos modèle si l'API est indisponible."""
     if not os.path.exists(MODEL_CONFIG_PATH):
@@ -1108,6 +1165,16 @@ def render_numeric_inputs(
         is_int = bool(range_info.get("is_int")) or feat in INT_FEATURES
         current_val_num = safe_int(current_val, int(default_val)) if is_int else safe_float(current_val, float(default_val))
         with cols[idx % columns]:
+            if is_boolean_numeric(feat, range_info):
+                checked = st.checkbox(
+                    get_feature_label(feat),
+                    value=bool(current_val_num),
+                    help=get_feature_explanation(feat),
+                    key=f"{key_prefix}_bool_{feat}"
+                )
+                value = 1 if checked else 0
+                st.session_state.client_features[feat] = value
+                continue
             if should_use_slider(feat, range_info):
                 min_val = range_info.get("min", default_val)
                 max_val = range_info.get("max", default_val)
@@ -1407,6 +1474,8 @@ def render_sidebar(reference_data: pd.DataFrame):
     with st.sidebar:
         st.title("🏦 Home Credit")
         st.divider()
+        if st.session_state.get("debug_mode"):
+            st.caption("🛠 Mode debug actif • Cmd/Ctrl+Shift+D pour désactiver")
 
         # Navigation
         st.header("📍 Navigation")
@@ -1649,6 +1718,8 @@ def render_prediction_tab():
     st.session_state.current_features = features
     
     st.markdown("---")
+    if st.session_state.get("debug_mode"):
+        st.caption("Debug: payload envoyé = `features` + `data` (compatibilité).")
 
     # Comparaison population (sans prédiction)
     render_comparison_section(features, ref_data, show_header=True)
@@ -2142,6 +2213,8 @@ def render_dataset_tab():
 
 def main():
     """Fonction principale de l'application."""
+    setup_debug_shortcut()
+    st.session_state.debug_mode = get_debug_mode()
     st.title("🏦 Home Credit - Outil de Scoring")
     st.markdown("""
     **Outil d'aide à la décision pour l'octroi de crédit**

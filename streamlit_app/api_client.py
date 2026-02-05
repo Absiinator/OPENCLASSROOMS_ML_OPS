@@ -88,9 +88,10 @@ def predict_client(features: Dict[str, Any]) -> Dict[str, Any]:
     try:
         endpoint = "/predict"
         url = f"{API_URL}{endpoint}"
+        payload = {"features": features, "data": features}
         response = requests.post(
             url,
-            json={"features": features},
+            json=payload,
             timeout=TIMEOUT_PREDICT,
             headers={"Content-Type": "application/json"}
         )
@@ -131,9 +132,10 @@ def explain_prediction(features: Dict[str, Any]) -> Dict[str, Any]:
     """
     try:
         url = f"{API_URL}/predict/explain"
+        payload = {"features": features, "data": features}
         response = requests.post(
             url,
-            json={"features": features},
+            json=payload,
             timeout=TIMEOUT_PREDICT,
             headers={"Content-Type": "application/json"}
         )
