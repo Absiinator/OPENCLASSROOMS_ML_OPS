@@ -24,6 +24,14 @@ Interface interactive pour expliquer les décisions d’octroi de crédit :
 - `MLFLOW_URL` : URL de l’UI MLflow (obligatoire)
 - `PORT` : port d’écoute Streamlit
 
+## Libellés & mapping des variables
+
+- Les menus/tableaux affichent des libellés explicites (même pour les features agrégées).
+- Le mapping est défini dans `app.py` :
+  - `FEATURE_LABELS`, `FEATURE_LABEL_OVERRIDES`
+  - `PREFIX_LABELS`, `TOKEN_LABELS`, `STAT_SUFFIXES`
+- Les libellés sont **uniquement UI** : l’API reçoit toujours les **noms de colonnes**.
+
 ## Liens utiles
 
 - [README principal](../README.md)

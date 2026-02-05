@@ -179,6 +179,15 @@ Le projet fournit **3 Dockerfiles** (API, Dashboard, MLflow). Chaque image est p
 - L'API charge automatiquement les modèles au démarrage depuis `/app/models/` dans Docker.
 - Seul le champ `features` est traité.
 
+### 🏷️ Libellés des variables (Dashboard)
+
+- Le dashboard affiche des **libellés explicites** pour toutes les colonnes (y compris features agrégées/engineered).
+- Le mapping UI est défini dans `streamlit_app/app.py` via :
+  - `FEATURE_LABELS` + `FEATURE_LABEL_OVERRIDES`
+  - `PREFIX_LABELS`, `TOKEN_LABELS`, `STAT_SUFFIXES`
+- **Important** : l’API attend toujours les **noms de colonnes d’origine**.  
+  Les libellés n’affectent pas le payload envoyé à `/predict`.
+
 ### 6. 🔄 CI/CD & Déploiement Render (plan gratuit)
 
 - `render.yaml` décrit les 3 services (API, Dashboard, MLflow)

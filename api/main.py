@@ -98,6 +98,65 @@ def get_risk_category(probability: float) -> RiskCategory:
         return RiskCategory.VERY_HIGH
 
 
+def _get_expected_input_features(preprocessor: Any) -> List[str]:
+    """Retourne la liste des features attendues par le préprocesseur."""
+    if preprocessor is None:
+        return []
+
+    candidates = [
+        "feature_names_in_",
+        "feature_names",
+        "input_features",
+        "feature_names_",
+    ]
+
+    for attr in candidates:
+        value = getattr(preprocessor, attr, None)
+        if value is None:
+            continue
+        if isinstance(value, str):
+            continue
+        if isinstance(value, (list, tuple, np.ndarray, pd.Index)):
+            return list(value)
+
+    # Cas Pipeline/Composite
+    for container_attr in ("named_steps", "steps"):
+        steps = getattr(preprocessor, container_attr, None)
+        if not steps:
+            continue
+        if isinstance(steps, dict):
+            step_iter = steps.values()
+        else:
+            step_iter = (step for _, step in steps)
+        for step in step_iter:
+            for attr in candidates:
+                value = getattr(step, attr, None)
+                if value is None or isinstance(value, str):
+                    continue
+                if isinstance(value, (list, tuple, np.ndarray, pd.Index)):
+                    return list(value)
+
+    return []
+
+
+def _align_features_for_preprocessor(df: pd.DataFrame, preprocessor: Any) -> pd.DataFrame:
+    """Aligne les colonnes d'entrée sur celles attendues par le préprocesseur."""
+    expected = _get_expected_input_features(preprocessor)
+    if not expected:
+        return df
+
+    df = df.copy()
+    missing = [col for col in expected if col not in df.columns]
+    if missing:
+        for col in missing:
+            df[col] = np.nan
+        print(f"[API] Features manquantes ajoutées: {len(missing)} (valeur=NaN)")
+
+    # Réordonner et supprimer les colonnes non attendues
+    df = df[expected]
+    return df
+
+
 def load_model_artifacts():
     """Charge le modèle et le préprocesseur."""
     global model, preprocessor, config
@@ -341,6 +400,9 @@ async def predict(
             print(f"[API /predict] ⚠️ Feature engineering failed: {e}")
             # Continue sans FE si erreur
         
+        # Aligner les colonnes attendues par le préprocesseur
+        df = _align_features_for_preprocessor(df, used_preprocessor)
+        
         # 2️⃣ Prétraitement (encoding, imputation, scaling)
         if used_preprocessor is not None:
             print("[API /predict] Transformation avec le préprocesseur...")
@@ -416,6 +478,9 @@ async def predict_simple(
             df = create_application_features(df)
         except Exception as e:
             print(f"[API /predict/simple] Feature engineering warning: {e}")
+        
+        # Aligner les colonnes attendues par le préprocesseur
+        df = _align_features_for_preprocessor(df, used_preprocessor)
         
         # Prétraitement
         if used_preprocessor is not None:
@@ -510,6 +575,9 @@ async def predict_batch(
             print(f"[API /predict/batch] ⚠️ Feature engineering failed: {e}")
             # Continue sans FE si erreur
         
+        # Aligner les colonnes attendues par le préprocesseur
+        df = _align_features_for_preprocessor(df, used_preprocessor)
+        
         # 2️⃣ Prétraitement (encoding, imputation, scaling)
         if used_preprocessor is not None:
             print("[API /predict/batch] Transformation avec le préprocesseur...")
@@ -593,7 +661,16 @@ async def explain_prediction(
             raise HTTPException(status_code=400, detail="Payload invalide: features manquantes")
 
         df = pd.DataFrame([client_dict])
-        
+
+        # Feature engineering
+        try:
+            df = create_application_features(df)
+        except Exception as e:
+            print(f"[API /predict/explain] Feature engineering warning: {e}")
+
+        # Aligner les colonnes attendues par le préprocesseur
+        df = _align_features_for_preprocessor(df, used_preprocessor)
+
         # Prétraitement
         if used_preprocessor is not None:
             X = used_preprocessor.transform(df)

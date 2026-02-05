@@ -22,6 +22,7 @@ import os
 import sys
 import urllib.request
 import urllib.error
+import re
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
@@ -156,7 +157,276 @@ def interpret_score(probability: float, threshold: float) -> dict:
 
 def get_feature_explanation(feature_name: str) -> str:
     """Retourne une explication en langage naturel d'une feature."""
-    return FEATURE_EXPLANATIONS.get(feature_name, f"{feature_name}")
+    return FEATURE_EXPLANATIONS.get(feature_name, get_feature_label(feature_name))
+
+
+FEATURE_LABELS = {k: v.get("label", k) for k, v in REQUIRED_FEATURES.items()}
+
+# Libellés explicites pour les colonnes "brutes" du dataset
+FEATURE_LABEL_OVERRIDES = {
+    "SK_ID_CURR": "ID client",
+    "TARGET": "Défaut (cible)",
+    "NAME_CONTRACT_TYPE": "Type de contrat",
+    "CODE_GENDER": "Genre",
+    "FLAG_OWN_CAR": "Possède une voiture",
+    "FLAG_OWN_REALTY": "Propriétaire immobilier",
+    "NAME_TYPE_SUITE": "Type d’accompagnement",
+    "NAME_INCOME_TYPE": "Type de revenu",
+    "NAME_EDUCATION_TYPE": "Niveau d’éducation",
+    "NAME_FAMILY_STATUS": "Statut familial",
+    "NAME_HOUSING_TYPE": "Type de logement",
+    "REGION_POPULATION_RELATIVE": "Population relative de la région",
+    "DAYS_BIRTH": "Âge (jours)",
+    "DAYS_EMPLOYED": "Ancienneté emploi (jours)",
+    "DAYS_REGISTRATION": "Jours depuis inscription",
+    "DAYS_ID_PUBLISH": "Jours depuis publication ID",
+    "OWN_CAR_AGE": "Âge du véhicule (années)",
+    "FLAG_MOBIL": "Téléphone mobile fourni",
+    "FLAG_EMP_PHONE": "Téléphone employeur fourni",
+    "FLAG_WORK_PHONE": "Téléphone travail fourni",
+    "FLAG_CONT_MOBILE": "Téléphone mobile joignable",
+    "FLAG_PHONE": "Téléphone fixe fourni",
+    "FLAG_EMAIL": "Email fourni",
+    "CNT_FAM_MEMBERS": "Nombre de membres du foyer",
+    "REGION_RATING_CLIENT": "Note de la région",
+    "REGION_RATING_CLIENT_W_CITY": "Note région (avec ville)",
+    "WEEKDAY_APPR_PROCESS_START": "Jour de la semaine de la demande",
+    "HOUR_APPR_PROCESS_START": "Heure de la demande",
+    "REG_REGION_NOT_LIVE_REGION": "Région d’enregistrement ≠ résidence",
+    "REG_REGION_NOT_WORK_REGION": "Région d’enregistrement ≠ travail",
+    "LIVE_REGION_NOT_WORK_REGION": "Région résidence ≠ travail",
+    "REG_CITY_NOT_LIVE_CITY": "Ville d’enregistrement ≠ résidence",
+    "REG_CITY_NOT_WORK_CITY": "Ville d’enregistrement ≠ travail",
+    "LIVE_CITY_NOT_WORK_CITY": "Ville résidence ≠ travail",
+    "ORGANIZATION_TYPE": "Type d’organisation",
+    "EXT_SOURCE_1": "Score externe 1",
+    "EXT_SOURCE_2": "Score externe 2",
+    "EXT_SOURCE_3": "Score externe 3",
+    "DAYS_LAST_PHONE_CHANGE": "Jours depuis dernier changement de téléphone",
+    "FONDKAPREMONT_MODE": "Fonds de rénovation (mode)",
+    "HOUSETYPE_MODE": "Type de maison (mode)",
+    "WALLSMATERIAL_MODE": "Matériau des murs (mode)",
+    "EMERGENCYSTATE_MODE": "État d’urgence (mode)",
+    "OBS_30_CNT_SOCIAL_CIRCLE": "Observations (30 jours)",
+    "DEF_30_CNT_SOCIAL_CIRCLE": "Défauts (30 jours)",
+    "OBS_60_CNT_SOCIAL_CIRCLE": "Observations (60 jours)",
+    "DEF_60_CNT_SOCIAL_CIRCLE": "Défauts (60 jours)",
+    "AMT_REQ_CREDIT_BUREAU_HOUR": "Demandes bureau de crédit (heure)",
+    "AMT_REQ_CREDIT_BUREAU_DAY": "Demandes bureau de crédit (jour)",
+    "AMT_REQ_CREDIT_BUREAU_WEEK": "Demandes bureau de crédit (semaine)",
+    "AMT_REQ_CREDIT_BUREAU_MON": "Demandes bureau de crédit (mois)",
+    "AMT_REQ_CREDIT_BUREAU_QRT": "Demandes bureau de crédit (trimestre)",
+    "AMT_REQ_CREDIT_BUREAU_YEAR": "Demandes bureau de crédit (année)",
+    "PREV_SK_ID_PREV_COUNT": "Demandes précédentes - Nombre de dossiers",
+    "partial_payment_rate": "Taux de paiements partiels",
+    "CC_CNT_DRAWINGS_CURRENT_MAX": "Carte de crédit - Nombre de tirages (max)",
+    "CC_AMT_BALANCE_MEAN": "Carte de crédit - Solde (moyenne)",
+    "PREV_AMT_APPLICATION_MEAN": "Demandes précédentes - Montant demandé (moyenne)",
+    "PREV_CREDIT_APPLICATION_RATIO_MEAN": "Demandes précédentes - Ratio crédit/demande (moyenne)",
+    "BUREAU_AMT_CREDIT_SUM_LIMIT_MAX": "Bureau - Limite de crédit cumulée (max)",
+    "BUREAU_DAYS_CREDIT_MAX": "Bureau - Jours depuis crédit (max)",
+    "BUREAU_DAYS_CREDIT_MIN": "Bureau - Jours depuis crédit (min)",
+    "NONLIVINGAREA_AVG": "Surface non habitable (moyenne)"
+}
+
+FEATURE_LABELS.update(FEATURE_LABEL_OVERRIDES)
+
+STAT_SUFFIXES = {
+    "AVG": "moyenne",
+    "MEAN": "moyenne",
+    "MEDI": "médiane",
+    "MEDIAN": "médiane",
+    "MODE": "mode",
+    "MAX": "max",
+    "MIN": "min",
+    "STD": "écart type",
+    "SUM": "somme",
+    "COUNT": "nb",
+}
+
+PREFIX_LABELS = {
+    "BUREAU": "Bureau",
+    "PREV": "Demandes précédentes",
+    "POS": "POS Cash",
+    "CC": "Carte de crédit",
+    "INSTAL": "Remboursements",
+}
+
+TOKEN_LABELS = {
+    "AMT": "Montant",
+    "CNT": "Nombre",
+    "DAYS": "Jours",
+    "FLAG": "Indicateur",
+    "EXT": "Score externe",
+    "SOURCE": "Source",
+    "REGION": "Région",
+    "CITY": "Ville",
+    "CREDIT": "Crédit",
+    "INCOME": "Revenu",
+    "ANNUITY": "Annuité",
+    "GOODS": "Bien",
+    "PRICE": "Prix",
+    "BALANCE": "Solde",
+    "LIMIT": "Limite",
+    "CURRENT": "Actuel",
+    "DRAWINGS": "Tirages",
+    "PAYMENT": "Paiement",
+    "APPLICATION": "Demande",
+    "APP": "Demande",
+    "PARTIAL": "Partiel",
+    "RATE": "Taux",
+    "RATIO": "Ratio",
+    "SUM": "Somme",
+    "RATING": "Note",
+    "WEEKDAY": "Jour de semaine",
+    "HOUR": "Heure",
+    "NAME": "",
+    "TYPE": "Type",
+    "SUITE": "Accompagnement",
+    "EDUCATION": "Éducation",
+    "FAMILY": "Familial",
+    "HOUSING": "Logement",
+    "ORGANIZATION": "Organisation",
+    "AGE": "Âge",
+    "OWN": "Possession",
+    "CAR": "Voiture",
+    "REALTY": "Immobilier",
+    "MOBIL": "Mobile",
+    "EMAIL": "Email",
+    "PHONE": "Téléphone",
+    "EMP": "Emploi",
+    "WORK": "Travail",
+    "CONTACT": "Contact",
+    "LIVE": "Résidence",
+    "NOT": "≠",
+    "APARTMENTS": "Appartements",
+    "BASEMENTAREA": "Surface sous-sol",
+    "COMMONAREA": "Surface commune",
+    "LANDAREA": "Surface terrain",
+    "LIVINGAPARTMENTS": "Appartements habitables",
+    "LIVINGAREA": "Surface habitable",
+    "NONLIVINGAPARTMENTS": "Appartements non habitables",
+    "NONLIVINGAREA": "Surface non habitable",
+    "TOTALAREA": "Surface totale",
+    "FLOORSMAX": "Étages max",
+    "FLOORSMIN": "Étages min",
+    "ENTRANCES": "Entrées",
+    "ELEVATORS": "Ascenseurs",
+    "YEARS": "Années",
+    "BEGINEXPLUATATION": "Début exploitation",
+    "BUILD": "Construction",
+    "FONDKAPREMONT": "Fonds de rénovation",
+    "HOUSETYPE": "Type de maison",
+    "WALLSMATERIAL": "Matériau des murs",
+    "EMERGENCYSTATE": "État d’urgence",
+    "OBS": "Observations",
+    "DEF": "Défauts",
+    "SOCIAL": "Social",
+    "CIRCLE": "Cercle",
+    "DOCUMENT": "Document",
+    "REQ": "Demandes",
+    "BUREAU": "Bureau",
+    "QRT": "Trimestre",
+    "YEAR": "Année",
+    "MON": "Mois",
+    "WEEK": "Semaine",
+    "DAY": "Jour",
+    "ID": "ID",
+    "SK": "ID",
+    "CURR": "Courant",
+    "PREV": "Précédent"
+}
+
+
+def _humanize_feature_name(feature_name: str) -> str:
+    """Transforme un nom de colonne en libellé explicite."""
+    name = re.sub(r"_x$|_y$", "", feature_name, flags=re.IGNORECASE)
+    name = re.sub(r"__+", "_", name)
+
+    # Cas spécifiques (ex: FLAG_DOCUMENT_3)
+    doc_match = re.match(r"FLAG_DOCUMENT_(\d+)", name)
+    if doc_match:
+        return f"Document {doc_match.group(1)} fourni"
+
+    parts = [p for p in name.split("_") if p]
+    if not parts:
+        return feature_name
+
+    group_label = None
+    first = parts[0].upper()
+    if first in PREFIX_LABELS:
+        group_label = PREFIX_LABELS[first]
+        parts = parts[1:]
+
+    stat_suffix = None
+    if parts:
+        last = parts[-1].upper()
+        if last in STAT_SUFFIXES:
+            stat_suffix = STAT_SUFFIXES[last]
+            parts = parts[:-1]
+
+    label_parts = []
+    for part in parts:
+        upper = part.upper()
+        if upper in TOKEN_LABELS:
+            token_label = TOKEN_LABELS[upper]
+            if token_label:
+                label_parts.append(token_label)
+            continue
+        if upper.isdigit():
+            label_parts.append(upper)
+            continue
+        label_parts.append(part.replace("-", " ").title())
+
+    label = " ".join(label_parts).strip() if label_parts else feature_name
+    if group_label:
+        label = f"{group_label} - {label}"
+    if stat_suffix:
+        label = f"{label} ({stat_suffix})"
+    return label
+
+
+def get_feature_label(feature_name: str) -> str:
+    """Retourne un libellé explicite pour une feature."""
+    if feature_name in FEATURE_LABELS:
+        return FEATURE_LABELS[feature_name]
+    normalized = re.sub(r"_x$|_y$", "", feature_name, flags=re.IGNORECASE)
+    if normalized in FEATURE_LABELS:
+        return FEATURE_LABELS[normalized]
+    return _humanize_feature_name(feature_name)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def compute_reference_stats(df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+    """Calcule les valeurs par défaut (médiane/mode) des features de référence."""
+    if df is None or df.empty:
+        return {"numeric": {}, "categorical": {}}
+
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_medians = df[numeric_cols].median(numeric_only=True).to_dict()
+
+    cat_cols = [c for c in df.columns if c not in numeric_cols]
+    cat_modes = {}
+    for col in cat_cols:
+        try:
+            mode = df[col].mode(dropna=True)
+            if not mode.empty:
+                cat_modes[col] = mode.iloc[0]
+        except Exception:
+            continue
+
+    return {"numeric": numeric_medians, "categorical": cat_modes}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_top_categories(df: pd.DataFrame, column: str, max_items: int = 20) -> List[str]:
+    """Retourne les catégories les plus fréquentes pour une colonne."""
+    if df is None or df.empty or column not in df.columns:
+        return []
+    series = df[column].dropna().astype(str)
+    if series.empty:
+        return []
+    return series.value_counts().head(max_items).index.tolist()
 
 
 def check_mlflow_health(url: str) -> bool:
@@ -239,6 +509,7 @@ def create_comparison_chart(
         marker_color="#4169E1"
     ))
 
+    label = get_feature_label(feature_name)
     fig.add_vline(
         x=client_value,
         line_dash="dash",
@@ -250,8 +521,8 @@ def create_comparison_chart(
 
     percentile = (data < client_value).mean() * 100
     fig.update_layout(
-        title=f"Distribution de {feature_name} (client au {percentile:.0f}e percentile)",
-        xaxis_title=feature_name,
+        title=f"Distribution de {label} (client au {percentile:.0f}e percentile)",
+        xaxis_title=label,
         yaxis_title="Nombre de clients",
         height=400,
         showlegend=False
@@ -268,9 +539,12 @@ def create_radar_comparison(
     """Crée un graphique radar pour comparer plusieurs features."""
     normalized_client = []
     normalized_mean = []
+    valid_features = []
 
     for feat in selected_features:
         if feat in reference_data.columns and feat in client_features:
+            if client_features.get(feat) is None or pd.isna(client_features.get(feat)):
+                continue
             ref_data = reference_data[feat].dropna()
             if ref_data.empty:
                 continue
@@ -282,14 +556,16 @@ def create_radar_comparison(
                 client_norm, mean_norm = 0.5, 0.5
             normalized_client.append(client_norm)
             normalized_mean.append(mean_norm)
+            valid_features.append(feat)
 
-    if not normalized_client:
+    if not normalized_client or len(valid_features) < 3:
         return None
+    labels = [get_feature_label(f) for f in valid_features]
 
     fig = go.Figure()
     fig.add_trace(go.Scatterpolar(
         r=normalized_mean + [normalized_mean[0]],
-        theta=selected_features + [selected_features[0]],
+        theta=labels + [labels[0]],
         fill='toself',
         fillcolor='rgba(65, 105, 225, 0.3)',
         line_color='#4169E1',
@@ -297,7 +573,7 @@ def create_radar_comparison(
     ))
     fig.add_trace(go.Scatterpolar(
         r=normalized_client + [normalized_client[0]],
-        theta=selected_features + [selected_features[0]],
+        theta=labels + [labels[0]],
         fill='toself',
         fillcolor='rgba(196, 30, 58, 0.3)',
         line_color='#C41E3A',
@@ -391,7 +667,7 @@ def render_sidebar(reference_data: pd.DataFrame):
             with st.expander("📊 Scores"):
                 for col in ["EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3"]:
                     if col in reference_data.columns:
-                        st.write(f"{col}: {reference_data[col].median():.3f}")
+                        st.write(f"{get_feature_label(col)}: {reference_data[col].median():.3f}")
         else:
             st.warning("📂 Données manquantes")
 
@@ -410,6 +686,7 @@ def render_prediction_tab():
         st.info(f"API_URL: {API_URL}")
 
     ref_data = load_reference_data()
+    ref_stats = compute_reference_stats(ref_data)
     
     st.markdown("### Saisie des informations client")
     
@@ -510,6 +787,63 @@ def render_prediction_tab():
             index=1,
             help="1=faible risque, 3=risque élevé"
         )
+
+    # Variables complémentaires (optionnelles)
+    numeric_cols = ref_data.select_dtypes(include=[np.number]).columns.tolist() if not ref_data.empty else []
+    categorical_cols = [c for c in ref_data.columns if c not in numeric_cols] if not ref_data.empty else []
+    exclude_cols = ["SK_ID_CURR", "TARGET", "index"]
+    extra_numeric = [f for f in numeric_cols if f not in exclude_cols and f not in REQUIRED_FEATURES]
+    extra_categorical = [f for f in categorical_cols if f not in exclude_cols and f not in REQUIRED_FEATURES]
+    if extra_numeric or extra_categorical:
+        with st.expander("➕ Variables complémentaires (optionnelles)", expanded=False):
+            st.caption("Sélectionnez des variables supplémentaires si besoin. Par défaut, seules les variables clés sont affichées.")
+            if extra_numeric:
+                selected_numeric = st.multiselect(
+                    "Variables numériques",
+                    options=sorted(extra_numeric, key=get_feature_label),
+                    format_func=get_feature_label
+                )
+                # Nettoyer les anciennes valeurs non sélectionnées
+                for key in list(st.session_state.client_features.keys()):
+                    if key in extra_numeric and key not in selected_numeric:
+                        st.session_state.client_features.pop(key, None)
+                for feat in selected_numeric:
+                    default_val = ref_stats["numeric"].get(feat, 0.0)
+                    if default_val is None or pd.isna(default_val):
+                        default_val = 0.0
+                    st.session_state.client_features[feat] = st.number_input(
+                        get_feature_label(feat),
+                        value=float(default_val),
+                        help=get_feature_explanation(feat),
+                        key=f"extra_num_{feat}"
+                    )
+
+            if extra_categorical:
+                selected_cat = st.multiselect(
+                    "Variables catégorielles",
+                    options=sorted(extra_categorical, key=get_feature_label),
+                    format_func=get_feature_label
+                )
+                for key in list(st.session_state.client_features.keys()):
+                    if key in extra_categorical and key not in selected_cat:
+                        st.session_state.client_features.pop(key, None)
+                for feat in selected_cat:
+                    default_val = ref_stats["categorical"].get(feat, "MISSING")
+                    if default_val is None or pd.isna(default_val):
+                        default_val = "MISSING"
+                    choices = get_top_categories(ref_data, feat, max_items=20)
+                    if default_val not in choices:
+                        choices = [str(default_val)] + choices
+                    if "MISSING" not in choices:
+                        choices.append("MISSING")
+                    default_val = str(default_val)
+                    st.session_state.client_features[feat] = st.selectbox(
+                        get_feature_label(feat),
+                        options=choices,
+                        index=choices.index(default_val),
+                        help=get_feature_explanation(feat),
+                        key=f"extra_cat_{feat}"
+                    )
     
     # Calculer les ratios automatiquement
     features = calculate_ratios(st.session_state.client_features)
@@ -518,8 +852,7 @@ def render_prediction_tab():
     st.markdown("---")
 
     # Comparaison population (sans prédiction)
-    with st.expander("📊 Comparaison avec la population (sans prédiction)", expanded=False):
-        render_comparison_section(features, ref_data, show_header=False)
+    render_comparison_section(features, ref_data, show_header=True)
 
     st.markdown("---")
 
@@ -624,17 +957,23 @@ def render_comparison_section(
     )
 
     numeric_cols = ref_data.select_dtypes(include=[np.number]).columns.tolist()
+    categorical_cols = [c for c in ref_data.columns if c not in numeric_cols]
     exclude_cols = ["SK_ID_CURR", "TARGET", "index"]
-    available_features = [f for f in numeric_cols if f not in exclude_cols and f in features]
+    numeric_features = [f for f in numeric_cols if f not in exclude_cols]
+    categorical_features = [f for f in categorical_cols if f not in exclude_cols]
+    available_features = numeric_features + categorical_features
 
     if not available_features:
         st.warning("Aucune feature comparable disponible.")
         return
 
-    explained_features = list(FEATURE_EXPLANATIONS.keys())
-    priority_features = [f for f in explained_features if f in available_features]
+    top_from_report = load_top_features_from_report(50)
+    priority_features = [f for f in top_from_report if f in available_features]
+    for feat in REQUIRED_FEATURES.keys():
+        if feat in available_features and feat not in priority_features:
+            priority_features.append(feat)
     other_features = [f for f in available_features if f not in priority_features]
-    available_features = priority_features + sorted(other_features)
+    available_features = priority_features + sorted(other_features, key=get_feature_label)
 
     tab1, tab2, tab3 = st.tabs([
         "🎯 Vue Radar",
@@ -646,20 +985,20 @@ def render_comparison_section(
         st.subheader("🎯 Comparaison multi-critères")
         # Utiliser les features les plus importantes issues du notebook (reports/feature_importance.csv)
         top_from_report = load_top_features_from_report(15)
-        default_radar = [f for f in top_from_report if f in available_features][:6]
+        default_radar = [f for f in top_from_report if f in numeric_features][:6]
         if len(default_radar) < 3:
             default_radar = [f for f in [
                 "EXT_SOURCE_2", "EXT_SOURCE_3", "EXT_SOURCE_1",
                 "DAYS_BIRTH", "AMT_CREDIT", "AMT_ANNUITY",
                 "AMT_INCOME_TOTAL", "CREDIT_INCOME_RATIO"
-            ] if f in available_features][:6]
+            ] if f in numeric_features][:6]
 
         radar_features = st.multiselect(
             "Caractéristiques à comparer (3-8 recommandé)",
-            available_features,
+            numeric_features,
             default=default_radar,
             help="Choisissez jusqu'à 8 caractéristiques pour le radar",
-            format_func=lambda x: f"{x} - {get_feature_explanation(x)[:40]}..."
+            format_func=get_feature_label
         )
 
         if radar_features and len(radar_features) >= 3:
@@ -667,7 +1006,7 @@ def render_comparison_section(
             if fig_radar:
                 st.plotly_chart(fig_radar, use_container_width=True)
             else:
-                st.warning("Impossible de créer le radar.")
+                st.warning("Radar indisponible. Vérifiez que les valeurs client sont renseignées.")
         else:
             st.info("Sélectionnez au moins 3 caractéristiques.")
 
@@ -677,61 +1016,116 @@ def render_comparison_section(
             "Sélectionnez une caractéristique",
             available_features,
             help="Voir la distribution et la position du client",
-            format_func=lambda x: f"{x}"
+            format_func=get_feature_label
         )
 
-        st.info(f"**{selected_feature}**: {get_feature_explanation(selected_feature)}")
+        st.info(f"**{get_feature_label(selected_feature)}**: {get_feature_explanation(selected_feature)}")
         client_value = features.get(selected_feature)
-        if client_value is None:
-            st.warning("Valeur client indisponible pour cette caractéristique.")
-        else:
-            fig = create_comparison_chart(client_value, selected_feature, ref_data, group_filter)
-            if fig:
-                st.plotly_chart(fig, use_container_width=True)
-                ref_col = ref_data[selected_feature].dropna()
-                percentile = (ref_col < client_value).mean() * 100 if len(ref_col) > 0 else 0
-                stat_col1, stat_col2, stat_col3 = st.columns(3)
-                with stat_col1:
-                    st.metric("Valeur client", f"{client_value:,.2f}")
-                with stat_col2:
-                    st.metric("Moyenne population", f"{ref_col.mean():,.2f}")
-                with stat_col3:
-                    st.metric("Percentile", f"{percentile:.0f}%")
-
-                if percentile < 25:
-                    st.warning("⚠️ Client dans les 25% les plus bas.")
-                elif percentile > 75:
-                    st.success("✅ Client dans les 25% les plus hauts.")
-                else:
-                    st.info("ℹ️ Client dans la moyenne.")
+        if selected_feature in numeric_features:
+            if client_value is None or pd.isna(client_value):
+                st.warning("Valeur client indisponible pour cette caractéristique. Ajoutez-la dans les variables complémentaires.")
             else:
-                st.warning("Impossible de créer le graphique.")
+                fig = create_comparison_chart(client_value, selected_feature, ref_data, group_filter)
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+                    ref_col = ref_data[selected_feature].dropna()
+                    percentile = (ref_col < client_value).mean() * 100 if len(ref_col) > 0 else 0
+                    stat_col1, stat_col2, stat_col3 = st.columns(3)
+                    with stat_col1:
+                        st.metric("Valeur client", f"{client_value:,.2f}")
+                    with stat_col2:
+                        st.metric("Moyenne population", f"{ref_col.mean():,.2f}")
+                    with stat_col3:
+                        st.metric("Percentile", f"{percentile:.0f}%")
+
+                    if percentile < 25:
+                        st.warning("⚠️ Client dans les 25% les plus bas.")
+                    elif percentile > 75:
+                        st.success("✅ Client dans les 25% les plus hauts.")
+                    else:
+                        st.info("ℹ️ Client dans la moyenne.")
+                else:
+                    st.warning("Impossible de créer le graphique.")
+        else:
+            if client_value is None or (isinstance(client_value, float) and pd.isna(client_value)):
+                st.warning("Valeur client indisponible pour cette caractéristique. Ajoutez-la dans les variables complémentaires.")
+            else:
+                series = ref_data[selected_feature].dropna().astype(str)
+                if series.empty:
+                    st.info("Aucune donnée disponible pour cette caractéristique.")
+                else:
+                    counts = series.value_counts()
+                    top = counts.head(10)
+                    other = counts.iloc[10:].sum()
+                    labels = list(top.index)
+                    values = list(top.values)
+                    if other > 0:
+                        labels.append("Autres")
+                        values.append(other)
+                    client_str = str(client_value)
+                    colors = ["#C41E3A" if label == client_str else "#4169E1" for label in labels]
+                    fig = go.Figure(go.Bar(x=labels, y=values, marker_color=colors))
+                    fig.update_layout(
+                        title=f"Répartition de {get_feature_label(selected_feature)}",
+                        xaxis_title="Catégorie",
+                        yaxis_title="Nombre de clients",
+                        height=400
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    client_pct = (series == client_str).mean() * 100
+                    st.info(f"Valeur client: **{client_str}** • Fréquence: **{client_pct:.1f}%**")
 
     with tab3:
         st.subheader("📋 Statistiques complètes du client")
-        comparison_data = []
-        for feat in available_features:
+        numeric_data = []
+        for feat in numeric_features:
             if feat in ref_data.columns:
                 client_val = features.get(feat)
-                if client_val is None:
-                    continue
                 ref_col = ref_data[feat].dropna()
                 if len(ref_col) == 0:
                     continue
-                percentile = (ref_col < client_val).mean() * 100
-                comparison_data.append({
-                    "Caractéristique": feat,
-                    "Valeur client": f"{client_val:,.2f}",
+                percentile = (ref_col < client_val).mean() * 100 if client_val is not None and not pd.isna(client_val) else None
+                numeric_data.append({
+                    "Caractéristique": get_feature_label(feat),
+                    "Colonne": feat,
+                    "Valeur client": f"{client_val:,.2f}" if client_val is not None and not pd.isna(client_val) else "Non renseigné",
                     "Moyenne pop.": f"{ref_col.mean():,.2f}",
                     "Médiane pop.": f"{ref_col.median():,.2f}",
-                    "Percentile": f"{percentile:.0f}%",
+                    "Percentile": f"{percentile:.0f}%" if percentile is not None else "—",
                 })
 
-        if comparison_data:
-            df_comparison = pd.DataFrame(comparison_data)
-            st.dataframe(df_comparison, use_container_width=True, hide_index=True)
+        if numeric_data:
+            st.markdown("**Variables numériques**")
+            df_numeric = pd.DataFrame(numeric_data)
+            st.dataframe(df_numeric, use_container_width=True, hide_index=True)
         else:
-            st.info("Aucune statistique disponible.")
+            st.info("Aucune statistique numérique disponible.")
+
+        cat_data = []
+        for feat in categorical_features:
+            if feat in ref_data.columns:
+                series = ref_data[feat].dropna().astype(str)
+                if series.empty:
+                    continue
+                mode_val = series.mode(dropna=True)
+                mode_val = mode_val.iloc[0] if not mode_val.empty else "—"
+                mode_pct = (series == str(mode_val)).mean() * 100 if mode_val != "—" else 0
+                client_val = features.get(feat)
+                client_str = str(client_val) if client_val is not None and not (isinstance(client_val, float) and pd.isna(client_val)) else "Non renseigné"
+                client_pct = (series == client_str).mean() * 100 if client_str != "Non renseigné" else None
+                cat_data.append({
+                    "Caractéristique": get_feature_label(feat),
+                    "Colonne": feat,
+                    "Valeur client": client_str,
+                    "Mode pop.": f"{mode_val}",
+                    "Freq. mode": f"{mode_pct:.1f}%",
+                    "Freq. client": f"{client_pct:.1f}%" if client_pct is not None else "—"
+                })
+
+        if cat_data:
+            st.markdown("**Variables catégorielles**")
+            df_cat = pd.DataFrame(cat_data)
+            st.dataframe(df_cat, use_container_width=True, hide_index=True)
 
 
 def render_drift_tab():

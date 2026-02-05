@@ -41,6 +41,11 @@ L’API charge automatiquement les artefacts présents dans `models/` à la raci
 }
 ```
 
+## Libellés côté dashboard
+
+Le dashboard Streamlit utilise des **libellés explicites** (mapping UI).  
+L’API attend **toujours les noms de colonnes d’origine** dans `features`.
+
 ## Données et rapports
 
 - Les données sont téléchargées dans l’image Docker au build (pas de Git LFS)
