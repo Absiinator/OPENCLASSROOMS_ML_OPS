@@ -1,6 +1,6 @@
-# Home Credit Scoring API - Requirements
-# =======================================
-# Dépendances pour l'API FastAPI
+# Home Credit Scoring - Requirements (env unique)
+# ===============================================
+# Dépendances pour API + notebooks + Streamlit + MLflow/Evidently
 
 # Framework API
 fastapi>=0.104.0,<0.116.0
@@ -12,18 +12,36 @@ pydantic>=2.5.0,<3.0.0
 
 python-multipart>=0.0.6
 
-# Data Science
+# Data Science / ML
 pandas>=1.5.0
 numpy>=1.23.0
 scikit-learn>=1.2.0
 lightgbm>=4.0.0
-
-# Sérialisation
 joblib>=1.3.0
+
+# MLflow + Data Drift
+mlflow==2.9.2
+evidently>=0.4.0
+
+# Visualisation / Notebooks
+matplotlib>=3.6.0
+seaborn>=0.12.0
+plotly>=5.18.0
+jupyter>=1.0.0
+ipykernel>=6.0.0
+
+# Dashboard
+streamlit>=1.28.0
+
+# Explainability
+shap>=0.43.0
+
+# Utils
+pyyaml>=6.0
 
 # HTTP Client (pour tests)
 httpx>=0.25.0
 requests>=2.31.0
 
-# Optionnel - SHAP pour explications avancées
-# shap>=0.43.0
+# Tests (local)
+pytest>=7.4.0

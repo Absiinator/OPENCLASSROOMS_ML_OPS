@@ -183,7 +183,15 @@ temp/
 # Memory bank (genere automatiquement)
 # ============================================
 # On garde memory-bank pour la documentation
-memory-bank/
+# memory-bank/
+
+# MISCS
 presentation_outline.txt
 presentation_outline_phase2.txt
 deepseek_ocr_report.odt
+
+presentation_phase1.*
+presentation_phase2.*
+Veille*
+*.zip
+Lepage*
