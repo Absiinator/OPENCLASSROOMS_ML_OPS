@@ -1483,6 +1483,300 @@ def create_radar_comparison(
     return fig
 
 
+def make_feature_signature(features: Dict[str, Any]) -> str:
+    """Crée une signature stable pour un dictionnaire de features."""
+    try:
+        return json.dumps(features, sort_keys=True, default=str)
+    except Exception:
+        return str(features)
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    """Convertit une valeur en float si possible."""
+    try:
+        if value is None:
+            return None
+        num = float(value)
+        if not np.isfinite(num):
+            return None
+        return num
+    except Exception:
+        return None
+
+
+def _direction_sign(direction: Optional[str]) -> int:
+    """Déduit le signe (+/-) depuis un texte de direction."""
+    if not direction:
+        return 0
+    text = str(direction).lower()
+    if any(token in text for token in ("diminue", "baisse", "réduit", "reduit", "decrease", "lower", "negative")):
+        return -1
+    if any(token in text for token in ("augmente", "hausse", "increase", "raise", "positive")):
+        return 1
+    return 0
+
+
+def _flatten_explanation_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Fusionne un bloc d'explication imbriqué si présent."""
+    if not isinstance(payload, dict):
+        return {}
+    for key in ("explanation", "shap", "shap_explanation", "local_explanation"):
+        nested = payload.get(key)
+        if isinstance(nested, dict):
+            merged = dict(payload)
+            merged.update(nested)
+            return merged
+    return payload
+
+
+def normalize_explanation_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalise les formats d'explication possibles renvoyés par l'API."""
+    raw = _flatten_explanation_payload(payload)
+    probability = _safe_float(raw.get("probability"))
+    decision = raw.get("decision")
+    base_value = _safe_float(
+        raw.get("base_value")
+        if raw.get("base_value") is not None
+        else raw.get("expected_value") if raw.get("expected_value") is not None
+        else raw.get("baseline")
+    )
+
+    contributions = []
+    impact_label = "Contribution"
+
+    shap_values = raw.get("shap_values")
+    if isinstance(shap_values, dict):
+        impact_label = "Valeur SHAP"
+        feature_values = raw.get("feature_values") or raw.get("values") or {}
+        for feature, shap_val in shap_values.items():
+            impact = _safe_float(shap_val)
+            if impact is None:
+                continue
+            value = feature_values.get(feature) if isinstance(feature_values, dict) else None
+            direction = "augmente le risque" if impact > 0 else "diminue le risque" if impact < 0 else "neutre"
+            contributions.append({
+                "feature": feature,
+                "value": value,
+                "impact": impact,
+                "direction": direction
+            })
+    elif isinstance(raw.get("contributions"), list):
+        has_shap = False
+        for item in raw.get("contributions", []):
+            if not isinstance(item, dict):
+                continue
+            feature = item.get("feature") or item.get("name")
+            if not feature:
+                continue
+            raw_impact = item.get("shap_value")
+            if raw_impact is not None:
+                has_shap = True
+            if raw_impact is None:
+                raw_impact = item.get("contribution")
+            if raw_impact is None:
+                raw_impact = item.get("shap")
+            impact = _safe_float(raw_impact)
+            if impact is None:
+                continue
+            direction = item.get("direction")
+            sign = _direction_sign(direction)
+            if sign and impact >= 0:
+                impact = impact * sign
+            if not direction:
+                direction = "augmente le risque" if impact > 0 else "diminue le risque" if impact < 0 else "neutre"
+            contributions.append({
+                "feature": feature,
+                "value": item.get("value"),
+                "impact": impact,
+                "direction": direction
+            })
+        if has_shap:
+            impact_label = "Valeur SHAP"
+    elif isinstance(raw.get("top_features"), list):
+        for item in raw.get("top_features", []):
+            if not isinstance(item, dict):
+                continue
+            feature = item.get("feature") or item.get("name")
+            if not feature:
+                continue
+            impact = _safe_float(item.get("contribution"))
+            if impact is None:
+                continue
+            direction = item.get("direction")
+            sign = _direction_sign(direction)
+            if sign and impact >= 0:
+                impact = impact * sign
+            if not direction:
+                direction = "augmente le risque" if impact > 0 else "diminue le risque" if impact < 0 else "neutre"
+            contributions.append({
+                "feature": feature,
+                "value": item.get("value"),
+                "impact": impact,
+                "direction": direction
+            })
+
+    contributions = sorted(contributions, key=lambda c: abs(c["impact"]), reverse=True)
+
+    return {
+        "probability": probability,
+        "decision": decision,
+        "base_value": base_value,
+        "impact_label": impact_label,
+        "contributions": contributions
+    }
+
+
+def _format_explanation_value(value: Any) -> str:
+    """Formatte une valeur de feature pour l'affichage."""
+    if value is None:
+        return "—"
+    try:
+        if isinstance(value, (int, np.integer)):
+            return f"{int(value)}"
+        if isinstance(value, (float, np.floating)):
+            if not np.isfinite(float(value)):
+                return "—"
+            return f"{float(value):.4f}"
+    except Exception:
+        return str(value)
+    return str(value)
+
+
+def create_shap_contribution_chart(
+    contributions: List[Dict[str, Any]],
+    impact_label: str,
+    max_features: int = 12
+) -> Optional[go.Figure]:
+    """Crée un graphique des contributions SHAP/contributions locales."""
+    if not contributions:
+        return None
+    top_contributions = contributions[:max_features]
+
+    labels = [get_feature_label(item["feature"]) for item in top_contributions]
+    values = [item["impact"] for item in top_contributions]
+    colors = ["#dc3545" if v > 0 else "#0d6efd" if v < 0 else "#6c757d" for v in values]
+    height = max(320, 30 * len(labels) + 140)
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=values,
+        y=labels,
+        orientation="h",
+        marker_color=colors,
+        text=[f"{v:+.3f}" for v in values],
+        textposition="outside"
+    ))
+    fig.add_vline(x=0, line_width=1, line_color="#6c757d")
+    fig.update_layout(
+        title="Impact des variables sur la prédiction",
+        xaxis_title=impact_label,
+        yaxis_title="Variables",
+        height=height,
+        margin=dict(l=140, r=40, t=60, b=40),
+        yaxis={'categoryorder': 'total ascending'}
+    )
+    return fig
+
+
+def render_shap_explanation_section(
+    explanation: Dict[str, Any],
+    fallback_prediction: Optional[Dict[str, Any]] = None,
+    feature_payload: Optional[Dict[str, Any]] = None
+) -> None:
+    """Affiche la section d'explication locale (SHAP/contributions)."""
+    normalized = normalize_explanation_payload(explanation)
+    contributions = normalized["contributions"]
+    impact_label = normalized["impact_label"]
+    base_value = normalized["base_value"]
+    probability = normalized["probability"]
+    decision = normalized["decision"]
+
+    if probability is None and fallback_prediction:
+        probability = fallback_prediction.get("probability")
+    if decision is None and fallback_prediction:
+        decision = fallback_prediction.get("decision")
+
+    st.subheader("🔍 Explication SHAP")
+    if impact_label == "Valeur SHAP":
+        st.caption(
+            "Les valeurs SHAP positives augmentent le risque, les négatives le réduisent. "
+            "L'ampleur indique l'influence relative."
+        )
+    else:
+        st.caption(
+            "L'API renvoie les variables les plus influentes et le sens de leur effet. "
+            "L'ampleur indique l'importance locale."
+        )
+
+    metrics = []
+    if probability is not None:
+        metrics.append(("Probabilité", f"{probability * 100:.1f}%"))
+    if decision:
+        metrics.append(("Décision", str(decision)))
+    if base_value is not None:
+        metrics.append(("Valeur de base", f"{base_value:.3f}"))
+    if metrics:
+        cols = st.columns(len(metrics))
+        for col, (label, value) in zip(cols, metrics):
+            col.metric(label, value)
+
+    if not contributions:
+        st.info("Aucune contribution détaillée retournée par l'API.")
+        return
+
+    fig = create_shap_contribution_chart(contributions, impact_label)
+    if fig:
+        st.plotly_chart(fig, use_container_width=True)
+
+    positive = [item for item in contributions if item["impact"] > 0]
+    negative = [item for item in contributions if item["impact"] < 0]
+
+    pos_col, neg_col = st.columns(2)
+    with pos_col:
+        st.markdown("**Facteurs qui augmentent le risque**")
+        if positive:
+            for item in positive[:5]:
+                label = get_feature_label(item["feature"])
+                expl = get_feature_explanation(item["feature"])
+                st.markdown(f"- **{label}** ({item['impact']:+.3f}) — {expl}")
+        else:
+            st.write("Aucun facteur positif détecté.")
+    with neg_col:
+        st.markdown("**Facteurs qui réduisent le risque**")
+        if negative:
+            for item in negative[:5]:
+                label = get_feature_label(item["feature"])
+                expl = get_feature_explanation(item["feature"])
+                st.markdown(f"- **{label}** ({item['impact']:+.3f}) — {expl}")
+        else:
+            st.write("Aucun facteur négatif détecté.")
+
+    with st.expander("Détails des contributions", expanded=False):
+        rows = []
+        for item in contributions[:20]:
+            value = item.get("value")
+            if value is None and feature_payload and item["feature"] in feature_payload:
+                value = feature_payload[item["feature"]]
+            rows.append({
+                "Variable": get_feature_label(item["feature"]),
+                "Nom technique": item["feature"],
+                "Valeur": _format_explanation_value(value),
+                impact_label: item["impact"],
+                "Sens": item.get("direction", "")
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        if impact_label == "Valeur SHAP":
+            st.caption(
+                "Nuance: selon la configuration du modèle, les valeurs SHAP peuvent être exprimées "
+                "sur l'échelle du modèle (probabilité ou log-odds)."
+            )
+        else:
+            st.caption(
+                "Nuance: la contribution représente une importance locale relative, à interpréter "
+                "avec le sens fourni par l'API."
+            )
+
+
 # ============================================
 # Interface utilisateur principale
 # ============================================
@@ -1748,8 +2042,21 @@ def render_prediction_tab():
     if st.button("🔮 Calculer le score", type="primary", use_container_width=True, disabled=not api_ok):
         with st.spinner("Calcul en cours..."):
             result = predict_client(features)
-        
-        if result and "error" not in result:
+        st.session_state.last_prediction = result
+        st.session_state.last_features = features
+        st.session_state.last_explanation = None
+        st.session_state.show_explanation = False
+
+    result = st.session_state.get("last_prediction")
+    last_features = st.session_state.get("last_features") or features
+
+    if result:
+        if "error" not in result:
+            if make_feature_signature(last_features) != make_feature_signature(features):
+                st.caption(
+                    "Résultats basés sur la dernière prédiction calculée. "
+                    "Cliquez sur 'Calculer le score' pour mettre à jour."
+                )
             # Afficher les résultats
             probability = result.get("probability", 0)
             threshold = result.get("threshold", 0.44)
@@ -1782,32 +2089,56 @@ def render_prediction_tab():
                 
                 {interpretation['explanation']}
                 """)
-            
-            # Stocker pour comparaison
-            st.session_state.last_prediction = result
-            st.session_state.last_features = features
 
             # Résumé descriptif du client
             st.subheader("👤 Résumé du profil client")
             profile_col1, profile_col2, profile_col3 = st.columns(3)
             with profile_col1:
                 st.markdown("**Situation financière**")
-                st.write(f"- Revenu: {features['AMT_INCOME_TOTAL']:,.0f} €")
-                st.write(f"- Crédit demandé: {features['AMT_CREDIT']:,.0f} €")
-                st.write(f"- Ratio crédit/revenu: {features['CREDIT_INCOME_RATIO']:.2f}")
+                st.write(f"- Revenu: {last_features['AMT_INCOME_TOTAL']:,.0f} €")
+                st.write(f"- Crédit demandé: {last_features['AMT_CREDIT']:,.0f} €")
+                st.write(f"- Ratio crédit/revenu: {last_features['CREDIT_INCOME_RATIO']:.2f}")
             with profile_col2:
                 st.markdown("**Situation personnelle**")
-                age_years = abs(int(features['DAYS_BIRTH'])) // 365
-                employed_years = abs(int(features['DAYS_EMPLOYED'])) // 365
+                age_years = abs(int(last_features['DAYS_BIRTH'])) // 365
+                employed_years = abs(int(last_features['DAYS_EMPLOYED'])) // 365
                 st.write(f"- Âge: {age_years} ans")
                 st.write(f"- Ancienneté emploi: {employed_years} ans")
-                st.write(f"- Enfants: {features['CNT_CHILDREN']}")
+                st.write(f"- Enfants: {last_features['CNT_CHILDREN']}")
             with profile_col3:
                 st.markdown("**Scores de crédit**")
-                st.write(f"- Score moyen: {features['EXT_SOURCE_MEAN']:.2f}")
-                st.write(f"- Propriétaire: {'Oui' if features['FLAG_OWN_REALTY'] else 'Non'}")
-                st.write(f"- Véhicule: {'Oui' if features['FLAG_OWN_CAR'] else 'Non'}")
-            
+                st.write(f"- Score moyen: {last_features['EXT_SOURCE_MEAN']:.2f}")
+                st.write(f"- Propriétaire: {'Oui' if last_features['FLAG_OWN_REALTY'] else 'Non'}")
+                st.write(f"- Véhicule: {'Oui' if last_features['FLAG_OWN_CAR'] else 'Non'}")
+
+            st.markdown("---")
+            if st.button("Afficher l'explication SHAP", key="show_shap_btn", use_container_width=True):
+                st.session_state.show_explanation = True
+
+            if st.session_state.get("show_explanation"):
+                explanation = st.session_state.get("last_explanation")
+                if explanation is None:
+                    with st.spinner("Calcul des explications SHAP..."):
+                        explanation = explain_prediction(last_features)
+                    st.session_state.last_explanation = explanation
+                if explanation and "error" not in explanation:
+                    render_shap_explanation_section(
+                        explanation,
+                        fallback_prediction=result,
+                        feature_payload=last_features
+                    )
+                else:
+                    status_code = explanation.get("status_code") if explanation else None
+                    detail = explanation.get("detail", "Erreur inconnue") if explanation else "Pas de réponse"
+                    if isinstance(detail, dict):
+                        detail = detail.get("detail", detail)
+                    detail = str(detail)
+                    if status_code == 404:
+                        st.error("❌ Endpoint API introuvable (404).")
+                        st.info(f"API_URL: {API_URL}")
+                        st.info(f"Endpoint attendu: {API_URL}/predict/explain")
+                    else:
+                        st.error(f"❌ Erreur API explications ({status_code}): {detail}")
         else:
             status_code = result.get("status_code") if result else None
             detail = result.get("detail", "Erreur inconnue") if result else "Pas de réponse"
